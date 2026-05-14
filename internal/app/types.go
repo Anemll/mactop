@@ -246,10 +246,7 @@ func (w *CPUCoreWidget) drawCore(buf *ui.Buffer, x, y, barWidth, index int, usag
 	}
 
 	textWidth := 7
-	innerBarWidth := availWidth - 2 - textWidth
-	if innerBarWidth < 0 {
-		innerBarWidth = 0
-	}
+	innerBarWidth := max(availWidth-2-textWidth, 0)
 	usedWidth := int((usage / 100.0) * float64(innerBarWidth))
 
 	buf.SetString("[", ui.NewStyle(BracketColor, CurrentBgColor), image.Pt(x+labelWidth, y))

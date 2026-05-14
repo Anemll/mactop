@@ -260,10 +260,7 @@ func calculateInfoLayout(infoLinesCount, asciiLinesCount int) infoLayout {
 
 	// Calculate available height for content (leave room for borders and scroll indicators)
 	// We reserve 2 extra lines for top/bottom scroll indicators
-	availableHeight := termHeight - 6
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
+	availableHeight := max(termHeight-6, 5)
 
 	// Determine total content height
 	totalLines := infoLinesCount
@@ -272,10 +269,7 @@ func calculateInfoLayout(infoLinesCount, asciiLinesCount int) infoLayout {
 	}
 
 	// Clamp scroll offset
-	maxScroll := totalLines - availableHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(totalLines-availableHeight, 0)
 	if infoScrollOffset > maxScroll {
 		infoScrollOffset = maxScroll
 	}
@@ -294,10 +288,7 @@ func calculateInfoLayout(infoLinesCount, asciiLinesCount int) infoLayout {
 		paddingTop = 1 // Just a little spacing
 	}
 
-	paddingLeft := (termWidth - contentWidth) / 2
-	if paddingLeft < 0 {
-		paddingLeft = 0
-	}
+	paddingLeft := max((termWidth-contentWidth)/2, 0)
 
 	return infoLayout{
 		startLine:    startLine,
@@ -357,10 +348,7 @@ func renderInfoText(infoLines, asciiArt []string, layout infoLayout, themeColor 
 
 		if layout.showAscii {
 			visibleLen := runewidth.StringWidth(stripTags(infoLine))
-			paddingSpaces := textColWidth - visibleLen
-			if paddingSpaces < 2 {
-				paddingSpaces = 2
-			}
+			paddingSpaces := max(textColWidth-visibleLen, 2)
 
 			fmt.Fprintf(&combinedText, "%s%s%s%s\n", paddingStr, infoLine, strings.Repeat(" ", paddingSpaces), asciiLine)
 		} else {
@@ -682,16 +670,10 @@ func formatTempGroupLine(cat string, g *tempGroup, themeColor string) string {
 
 func renderScrollableLines(lines []string, themeColor string) string {
 	_, termHeight := ui.TerminalDimensions()
-	availableHeight := termHeight - 6
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
+	availableHeight := max(termHeight-6, 5)
 	totalLines := len(lines)
 
-	maxScroll := totalLines - availableHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(totalLines-availableHeight, 0)
 	if infoScrollOffset > maxScroll {
 		infoScrollOffset = maxScroll
 	}

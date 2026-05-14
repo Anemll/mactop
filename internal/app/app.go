@@ -108,10 +108,9 @@ func setupUI() {
 	termWidth, termHeight := ui.TerminalDimensions()
 	UpdateCachedTerminalDimensions(termWidth, termHeight)
 	// Use full terminal width for StepChart data buffers (old sparkline sizing used half)
-	numPoints := termWidth
-	if numPoints < 500 {
-		numPoints = 500 // Minimum buffer size
-	}
+	numPoints := max(termWidth,
+		// Minimum buffer size
+		500)
 
 	powerValues = make([]float64, numPoints)
 	gpuValues = make([]float64, numPoints)
@@ -314,10 +313,7 @@ func updateHelpText() {
 
 	// Determine if we need scrolling
 	// First calculate raw available height minus borders
-	rawHeight := termHeight - 2
-	if rawHeight < 1 {
-		rawHeight = 1
-	}
+	rawHeight := max(termHeight-2, 1)
 
 	availableHeight := rawHeight
 	maxOffset := 0
@@ -325,10 +321,7 @@ func updateHelpText() {
 	// If content doesn't fit, we need to reserve space for indicators
 	if len(lines) > rawHeight {
 		// Reserve 2 lines (1 for top indicator/spacer, 1 for bottom indicator/spacer)
-		availableHeight = rawHeight - 2
-		if availableHeight < 1 {
-			availableHeight = 1
-		}
+		availableHeight = max(rawHeight-2, 1)
 		maxOffset = len(lines) - availableHeight
 	}
 

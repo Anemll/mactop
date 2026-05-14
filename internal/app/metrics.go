@@ -415,10 +415,7 @@ func collectMetrics(done chan struct{}, cpumetricsChan chan CPUMetrics, gpumetri
 	for {
 		start := time.Now()
 
-		sampleDuration := updateInterval
-		if sampleDuration < 100 {
-			sampleDuration = 100
-		}
+		sampleDuration := max(updateInterval, 100)
 
 		m := normalizeSocMetricsPower(sampleSocMetrics(sampleDuration / 2))
 
