@@ -57,7 +57,7 @@
 - Support for all Apple Silicon models
 - **Auto-detect Light/Dark Mode**: Automatically adjusts UI colors based on your terminal's background color or system theme.
 - **Configurable Units**: Customize units for network, disk, and temperature display (`--unit-network`, `--unit-disk`, `--unit-temp`)
-- **Multi-Language Support (i18n)**: 19 languages with automatic system language detection — English, Arabic, Chinese, Dutch, French, German, Hebrew, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish, Vietnamese (`--lang` to override)
+- **Multi-Language Support (i18n)**: 20 languages with automatic system language detection — English, Arabic, Chinese (Simplified & Traditional), Dutch, French, German, Hebrew, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish, Vietnamese (`--lang` to override)
 
 ## Install via Homebrew
 
@@ -242,7 +242,10 @@ Reorder sections in expanded mode. Sections appear in the order listed:
 
 ## Theme File Support
 
-Create `~/.mactop/theme.json` to customize colors:
+Create `theme.json` in mactop's config directory to customize colors:
+
+- If `XDG_CONFIG_HOME` is set to an absolute path: `$XDG_CONFIG_HOME/mactop/theme.json`
+- Otherwise: `~/.mactop/theme.json`
 
 ### Basic Colors
 
@@ -303,6 +306,18 @@ Individual component colors that override the foreground:
 | Red        | `#FF9580` |
 
 Priority order: CLI flags > theme.json > saved config.
+
+## Config and Log Paths
+
+mactop supports XDG directory variables while preserving the original path layout when those variables are unset.
+
+| File | XDG path when set | Legacy fallback |
+|------|-------------------|-----------------|
+| Config | `$XDG_CONFIG_HOME/mactop/config.json` | `~/.mactop/config.json` |
+| Theme | `$XDG_CONFIG_HOME/mactop/theme.json` | `~/.mactop/theme.json` |
+| Log | `$XDG_STATE_HOME/mactop/mactop.log` | `~/.mactop/mactop.log` |
+
+Relative XDG paths are ignored; XDG base directories must be absolute paths.
 
 ## mactop Commands
 

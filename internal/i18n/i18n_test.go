@@ -14,6 +14,47 @@ var (
 	fmtPlaceholderRE = regexp.MustCompile(`%(\[[0-9]+\])?[-+# 0-9.*]*[bcdeEfFgGosxXvTtU%]`)
 )
 
+func TestNormalizeLanguageTag(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"english primary", "en", "en"},
+		{"english region", "en-US", "en"},
+		{"english POSIX", "en_US.UTF-8", "en"},
+		{"japanese region", "ja-JP", "ja"},
+		{"japanese POSIX", "ja_JP.UTF-8", "ja"},
+		{"zh primary", "zh", "zh"},
+		{"zh-CN", "zh-CN", "zh"},
+		{"zh-Hans", "zh-Hans", "zh"},
+		{"zh-Hans-CN", "zh-Hans-CN", "zh"},
+		{"zh-SG", "zh-SG", "zh"},
+		{"zh POSIX CN", "zh_CN.UTF-8", "zh"},
+		{"zh-TW legacy", "zh-TW", "zh-Hant"},
+		{"zh-HK legacy", "zh-HK", "zh-Hant"},
+		{"zh-MO legacy", "zh-MO", "zh-Hant"},
+		{"zh-Hant", "zh-Hant", "zh-Hant"},
+		{"zh-Hant-TW", "zh-Hant-TW", "zh-Hant"},
+		{"zh-Hant-HK", "zh-Hant-HK", "zh-Hant"},
+		{"zh POSIX TW", "zh_TW.UTF-8", "zh-Hant"},
+		{"zh POSIX HK", "zh_HK.UTF-8", "zh-Hant"},
+		{"mixed case Hant", "ZH-hAnT-tw", "zh-Hant"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := normalizeLanguageTag(tc.in); got != tc.want {
+				t.Fatalf("normalizeLanguageTag(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLocalesMatchEnglishCatalog(t *testing.T) {
 	files, err := localeFS.ReadDir("locales")
 	if err != nil {
