@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -10,6 +11,7 @@ import (
 )
 
 func startPrometheusServer(port string) {
+	port = strings.TrimPrefix(port, ":")
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(cpuUsage)
 	registry.MustRegister(ecoreUsage)
