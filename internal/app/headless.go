@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"math"
-	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/metaspartan/mactop/v2/internal/i18n"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/toon-format/toon-go"
 	"gopkg.in/yaml.v3"
 )
@@ -277,12 +275,7 @@ func printHeadlessSeparator(format string, count int, samplesCollected int) {
 
 func startHeadlessPrometheus() {
 	if prometheusPort != "" {
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			if err := http.ListenAndServe(prometheusPort, nil); err != nil {
-				fmt.Fprintf(os.Stderr, i18n.T("Headless_ErrorPrometheusServer")+"\n", err)
-			}
-		}()
+		startPrometheusServer(prometheusPort)
 	}
 }
 
@@ -448,33 +441,19 @@ func getHeadlessNetworkLinks() HeadlessNetworkLinks {
 }
 
 func collectHeadlessData(tbInfo *ThunderboltOutput, sysInfo SystemInfo) HeadlessOutput {
-	m := sampleSocMetrics(updateInterval)
+	m := normalizeSocMetricsPower(sampleSocMetrics(updateInterval))
 	mem := getMemoryMetrics()
 	netDisk := getNetDiskMetrics()
+	publishPrometheusNetDiskMetrics(netDisk)
 
-	var cpuUsage float64
 	percentages, err := GetCPUPercentages()
-	if err == nil && len(percentages) > 0 {
-		var total float64
-		for _, p := range percentages {
-			total += p
-		}
-		cpuUsage = total / float64(len(percentages))
+	if err != nil {
+		percentages = nil
 	}
+	cpuUsage := averageCPUUsage(percentages)
 
-	thermalStr, _ := getThermalStateString()
-
-	componentSum := m.TotalPower
-	totalPower := m.SystemPower
-
-	if totalPower < componentSum {
-		totalPower = componentSum
-	}
-
-	residualSystem := totalPower - componentSum
-
-	m.SystemPower = residualSystem
-	m.TotalPower = totalPower
+	thermalLevel := getThermalStateLevel()
+	thermalStr := thermalStateString(thermalLevel)
 
 	tbNetStats := GetThunderboltNetStats()
 	var tbNetTotalIn, tbNetTotalOut float64
@@ -532,6 +511,17 @@ func collectHeadlessData(tbInfo *ThunderboltOutput, sysInfo SystemInfo) Headless
 
 	// Get display FPS metrics
 	fpsMetrics := GetDisplayFPSMetrics()
+	cpuMetrics := cpuMetricsFromSoc(m, percentages, cpuUsage, thermalStateThrottled(thermalLevel))
+	gpuMetrics := gpuMetricsFromSoc(m)
+	publishPrometheusMetrics(prometheusMetricsSnapshot{
+		SystemInfo:   sysInfo,
+		CPUMetrics:   cpuMetrics,
+		GPUMetrics:   gpuMetrics,
+		Memory:       mem,
+		TBNetStats:   tbNetStats,
+		RDMAStatus:   rdmaStatus,
+		ThermalLevel: thermalLevel,
+	})
 
 	output := HeadlessOutput{
 		Timestamp:             time.Now().Format(time.RFC3339),

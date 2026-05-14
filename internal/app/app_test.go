@@ -91,6 +91,51 @@ func TestNewCPUMetrics(t *testing.T) {
 	}
 }
 
+func TestNormalizeSocMetricsPower(t *testing.T) {
+	withResidual := normalizeSocMetricsPower(SocMetrics{
+		TotalPower:  10,
+		SystemPower: 14,
+	})
+	if withResidual.TotalPower != 14 {
+		t.Fatalf("expected package power 14, got %.2f", withResidual.TotalPower)
+	}
+	if withResidual.SystemPower != 4 {
+		t.Fatalf("expected residual system power 4, got %.2f", withResidual.SystemPower)
+	}
+
+	componentOnly := normalizeSocMetricsPower(SocMetrics{
+		TotalPower:  10,
+		SystemPower: 7,
+	})
+	if componentOnly.TotalPower != 10 {
+		t.Fatalf("expected package power to fall back to component sum 10, got %.2f", componentOnly.TotalPower)
+	}
+	if componentOnly.SystemPower != 0 {
+		t.Fatalf("expected no residual system power, got %.2f", componentOnly.SystemPower)
+	}
+}
+
+func TestPrometheusCoreAveragesAndTypes(t *testing.T) {
+	info := SystemInfo{CoreCount: 6, ECoreCount: 2, PCoreCount: 3, SCoreCount: 1}
+	eAvg, pAvg, sAvg := calculateCoreAveragesForSystem([]float64{10, 30, 40, 50, 60, 80}, info)
+	if eAvg != 20 {
+		t.Fatalf("expected E-core average 20, got %.2f", eAvg)
+	}
+	if pAvg != 50 {
+		t.Fatalf("expected P-core average 50, got %.2f", pAvg)
+	}
+	if sAvg != 80 {
+		t.Fatalf("expected S-core average 80, got %.2f", sAvg)
+	}
+
+	expectedTypes := []string{"e", "e", "p", "p", "p", "s"}
+	for i, want := range expectedTypes {
+		if got := coreTypeForIndex(i, info); got != want {
+			t.Fatalf("core %d type = %s, want %s", i, got, want)
+		}
+	}
+}
+
 func TestNewCPUCoreWidget(t *testing.T) {
 	info := SystemInfo{
 		Name:       "Apple M1",
