@@ -128,16 +128,6 @@ func truncateWithEllipsis(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func max(nums ...int) int {
-	maxVal := nums[0]
-	for _, num := range nums[1:] {
-		if num > maxVal {
-			maxVal = num
-		}
-	}
-	return maxVal
-}
-
 func formatBytes(val float64, unitType string) string {
 	units := []string{"B", "KB", "MB", "GB", "TB"}
 

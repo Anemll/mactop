@@ -57,27 +57,6 @@ func TestFormatTemp(t *testing.T) {
 	}
 }
 
-func TestMax(t *testing.T) {
-	tests := []struct {
-		name string
-		nums []int
-		want int
-	}{
-		{"Single positive", []int{5}, 5},
-		{"Multiple positive", []int{1, 5, 3}, 5},
-		{"Negative numbers", []int{-1, -5, -3}, -1},
-		{"Mixed numbers", []int{-5, 0, 5}, 5},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := max(tt.nums...); got != tt.want {
-				t.Errorf("max() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNewCPUMetrics(t *testing.T) {
 	m := NewCPUMetrics()
 	if m.CoreMetrics == nil {
