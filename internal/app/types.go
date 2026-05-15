@@ -251,7 +251,7 @@ func (w *CPUCoreWidget) drawCore(buf *ui.Buffer, x, y, barWidth, index int, usag
 
 	buf.SetString("[", ui.NewStyle(BracketColor, CurrentBgColor), image.Pt(x+labelWidth, y))
 
-	for bx := 0; bx < innerBarWidth; bx++ {
+	for bx := range innerBarWidth {
 		char := " "
 		var color ui.Color
 		if bx < usedWidth {
