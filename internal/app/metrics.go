@@ -30,6 +30,8 @@ func startPrometheusServer(port string) {
 	registry.MustRegister(rdmaAvailable)
 	registry.MustRegister(scoreUsage)
 	registry.MustRegister(dramBandwidth)
+	registry.MustRegister(batteryPercent)
+	registry.MustRegister(batteryCharging)
 	registry.MustRegister(cpuCoreUsage)
 	registry.MustRegister(systemInfoGauge)
 	registry.MustRegister(fanRPM)
@@ -238,6 +240,18 @@ func publishPrometheusMetrics(snapshot prometheusMetricsSnapshot) {
 
 	updatePrometheusThunderbolt(snapshot.TBNetStats, snapshot.RDMAStatus)
 	updatePrometheusSensors(cpuMetrics.Fans, cpuMetrics.TempSensors)
+
+	if bat := GetBatteryInfo(); bat.Present {
+		batteryPercent.Set(float64(bat.Percent))
+		if bat.Charging {
+			batteryCharging.Set(1)
+		} else {
+			batteryCharging.Set(0)
+		}
+	} else {
+		batteryPercent.Set(-1)
+		batteryCharging.Set(0)
+	}
 }
 
 func updatePrometheusThunderbolt(tbStats []ThunderboltNetStats, rdmaStatus RDMAStatus) {

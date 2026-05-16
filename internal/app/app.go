@@ -118,6 +118,8 @@ func setupUI() {
 	swapUsedHistory = make([]float64, numPoints)
 	cpuUsageHistory = make([]float64, numPoints)
 	powerUsageHistory = make([]float64, numPoints)
+	memBWReadHistory = make([]float64, numPoints)
+	memBWWriteHistory = make([]float64, numPoints)
 
 	sparkline = w.NewSparkline()
 	sparkline.MaxHeight = 100
@@ -169,6 +171,12 @@ func setupUI() {
 	cpuHistoryChart.ShowAxes = false
 	cpuHistoryChart.ShowRightAxis = true
 	cpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}
+
+	memBWHistoryChart = w.NewStepChart()
+	memBWHistoryChart.Title = i18n.T("TUI_MemoryBandwidthHistory")
+	memBWHistoryChart.ShowAxes = false
+	memBWHistoryChart.ShowRightAxis = true
+	memBWHistoryChart.LineColors = []ui.Color{ui.ColorCyan, ui.ColorMagenta}
 
 	cpuCoreWidget = NewCPUCoreWidget(appleSiliconModel)
 	coreSummary := FormatCoreSummary(cpuCoreWidget.eCoreCount, cpuCoreWidget.pCoreCount, cpuCoreWidget.sCoreCount)
@@ -938,6 +946,47 @@ func updateMemoryHistory(memoryMetrics MemoryMetrics) {
 		}
 		memoryHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_MemoryHistoryDetail"), usedGB, totalGB, swapGB)
 	}
+
+	updateMemBandwidthHistory()
+}
+
+func updateMemBandwidthHistory() {
+	readBW := lastCPUMetrics.DRAMReadBW
+	writeBW := lastCPUMetrics.DRAMWriteBW
+	combinedBW := lastCPUMetrics.DRAMBWCombined
+
+	for i := 0; i < len(memBWReadHistory)-1; i++ {
+		memBWReadHistory[i] = memBWReadHistory[i+1]
+		memBWWriteHistory[i] = memBWWriteHistory[i+1]
+	}
+	memBWReadHistory[len(memBWReadHistory)-1] = readBW
+	memBWWriteHistory[len(memBWWriteHistory)-1] = writeBW
+
+	if combinedBW > maxMemBWSeen {
+		maxMemBWSeen = combinedBW
+	}
+
+	if memBWHistoryChart != nil {
+		termWidth, _ := GetCachedTerminalDimensions()
+		visibleWidth := termWidth - 4
+		if visibleWidth <= 0 || visibleWidth > len(memBWReadHistory) {
+			visibleWidth = len(memBWReadHistory)
+		}
+		visibleRead := memBWReadHistory[len(memBWReadHistory)-visibleWidth:]
+		visibleWrite := memBWWriteHistory[len(memBWWriteHistory)-visibleWidth:]
+
+		memBWHistoryChart.Data = [][]float64{visibleRead, visibleWrite}
+		scaleMax := maxMemBWSeen
+		if scaleMax < 10 {
+			scaleMax = 10
+		}
+		memBWHistoryChart.MaxVal = scaleMax
+		memBWHistoryChart.DataLabels = []string{
+			fmt.Sprintf("R %.1f GB/s", readBW),
+			fmt.Sprintf("W %.1f GB/s", writeBW),
+		}
+		memBWHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_MemBWHistoryDetail"), combinedBW)
+	}
 }
 
 var lastEFreq, lastPFreq, lastSFreq int
@@ -1027,6 +1076,10 @@ func updatePowerChartText(cpuMetrics CPUMetrics, thermalStr string) {
 			thermalStr,
 			uptimeStr,
 		)
+	}
+
+	if line := formatBatteryLine(); line != "" {
+		PowerChart.Text += "\n" + line
 	}
 }
 

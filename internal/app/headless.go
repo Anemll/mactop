@@ -121,6 +121,7 @@ type HeadlessOutput struct {
 	RDMAStatus            RDMAStatus           `json:"rdma_status" yaml:"rdma_status" xml:"RDMAStatus" toon:"rdma_status"`
 	Fans                  []HeadlessFan        `json:"fans,omitempty" yaml:"fans,omitempty" xml:"Fans" toon:"fans"`
 	Temperatures          []HeadlessTempGroup  `json:"temperatures,omitempty" yaml:"temperatures,omitempty" xml:"Temperatures" toon:"temperatures"`
+	Battery               *BatteryInfo         `json:"battery,omitempty" yaml:"battery,omitempty" xml:"Battery,omitempty" toon:"battery"`
 }
 
 func runHeadless(count int) {
@@ -240,6 +241,7 @@ func printCSVHeader() {
 	}
 
 	// Add JSON blob headers for complex nested data
+	headers = append(headers, "Battery_Present", "Battery_Percent", "Battery_Charging", "Battery_State")
 	headers = append(headers, "Thunderbolt_Info_JSON", "Processes_JSON", "Network_Links_JSON", "Volumes_JSON")
 
 	// Print CSV header line
@@ -373,6 +375,19 @@ func processHeadlessSample(format string, tbInfo *ThunderboltOutput, sysInfo Sys
 			}
 			record = append(record, fmt.Sprintf("%.2f", val))
 		}
+
+		var batPresent, batPercent, batCharging, batState string
+		if output.Battery != nil {
+			batPresent = "true"
+			batPercent = fmt.Sprintf("%d", output.Battery.Percent)
+			batCharging = fmt.Sprintf("%t", output.Battery.Charging)
+			batState = output.Battery.State
+		} else {
+			batPresent = "false"
+			batPercent = "-1"
+			batCharging = "false"
+		}
+		record = append(record, batPresent, batPercent, batCharging, batState)
 
 		tbJSON, _ := json.Marshal(output.ThunderboltInfo)
 		procsJSON, _ := json.Marshal(output.Processes)
@@ -548,6 +563,9 @@ func collectHeadlessData(tbInfo *ThunderboltOutput, sysInfo SystemInfo) Headless
 		ThermalState:          thermalStr,
 		Fans:                  headlessFans,
 		Temperatures:          orderedTemps,
+	}
+	if bat := GetBatteryInfo(); bat.Present {
+		output.Battery = &bat
 	}
 	if sysInfo.ECoreCount > 0 {
 		output.ECPUUsage = []float64{float64(m.EClusterFreqMHz), m.EClusterActive}

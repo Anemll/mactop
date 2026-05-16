@@ -243,6 +243,7 @@ func applyCustomWidgetColors(theme *CustomThemeConfig, fgColor ui.Color) {
 	styleStepChart(gpuHistoryChart, gpuColor)
 	styleStepChart(powerHistoryChart, powerColor)
 	styleStepChart(memoryHistoryChart, resolveCustomColor(theme.Memory, fgColor))
+	styleStepChart(memBWHistoryChart, resolveCustomColor(theme.Memory, fgColor))
 	styleStepChart(cpuHistoryChart, resolveCustomColor(theme.CPU, fgColor))
 
 	// Paragraphs
@@ -303,7 +304,7 @@ func applyThemeToSparklines(color ui.Color) {
 }
 
 func applyThemeToStepCharts(color ui.Color) {
-	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart} {
+	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart} {
 		styleStepChart(sc, color)
 	}
 }
@@ -714,7 +715,7 @@ func applyBackgroundToSparklines(bgColor ui.Color) {
 }
 
 func applyBackgroundToStepCharts(bgColor ui.Color) {
-	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart}
+	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart}
 	for _, sc := range stepCharts {
 		if sc != nil {
 			sc.BackgroundColor = bgColor

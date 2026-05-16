@@ -356,3 +356,12 @@ TempCategory_Thunderbolt = "雷电"
 TempCategory_Wireless = "无线"
 TempCategory_Display = "显示"
 TempCategory_Other = "其他"
+
+Info_Battery = "Battery"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "charging"
+Info_BatteryDischarging = "on battery"
+Info_BatteryAC = "AC"
+
+TUI_MemoryBandwidthHistory = "Memory Bandwidth History"
+Metrics_MemBWHistoryDetail = "DRAM Bandwidth: %.1f GB/s"

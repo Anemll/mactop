@@ -27,9 +27,10 @@ const (
 	LayoutHistory         = "history"      // StepChart history for GPU, Power, and Memory
 	LayoutHistoryFull     = "history_full" // StepChart history including CPU
 	LayoutFan             = "fan"          // Fan control and temperature sensors
+	LayoutGPUMemory       = "gpu_memory"   // GPU + Memory focused with memory bandwidth chart
 )
 
-var layoutOrder = []string{LayoutDefault, LayoutAlternative, LayoutAlternativeFull, LayoutVertical, LayoutCompact, LayoutDashboard, LayoutGaugesOnly, LayoutGPUFocus, LayoutCPUFocus, LayoutNetworkIO, LayoutSmall, LayoutTiny, LayoutMicro, LayoutNano, LayoutPico, LayoutHistory, LayoutHistoryFull, LayoutFan}
+var layoutOrder = []string{LayoutDefault, LayoutAlternative, LayoutAlternativeFull, LayoutVertical, LayoutCompact, LayoutDashboard, LayoutGaugesOnly, LayoutGPUFocus, LayoutCPUFocus, LayoutGPUMemory, LayoutNetworkIO, LayoutSmall, LayoutTiny, LayoutMicro, LayoutNano, LayoutPico, LayoutHistory, LayoutHistoryFull, LayoutFan}
 
 func setupGrid() {
 	totalLayouts = len(layoutOrder)
@@ -254,10 +255,8 @@ func setLayoutGrid(layoutName string) {
 		setCompactLayoutGrid(layoutName)
 	case LayoutInfo, LayoutFan:
 		setInfoFanLayoutGrid(layoutName)
-	case LayoutHistory:
-		setHistoryLayoutGrid()
-	case LayoutHistoryFull:
-		setHistoryFullLayoutGrid()
+	case LayoutHistory, LayoutHistoryFull, LayoutGPUMemory:
+		setHistoryLikeLayoutGrid(layoutName)
 	default: // LayoutDefault
 		grid.Set(
 			ui.NewRow(1.0/4,
@@ -389,6 +388,17 @@ func setInfoFanLayoutGrid(layoutName string) {
 	}
 }
 
+func setHistoryLikeLayoutGrid(layoutName string) {
+	switch layoutName {
+	case LayoutHistoryFull:
+		setHistoryFullLayoutGrid()
+	case LayoutGPUMemory:
+		setGPUMemoryLayoutGrid()
+	default:
+		setHistoryLayoutGrid()
+	}
+}
+
 func setHistoryLayoutGrid() {
 	grid.Set(
 		ui.NewRow(1.0/3,
@@ -399,6 +409,25 @@ func setHistoryLayoutGrid() {
 			ui.NewCol(1.0/2, memoryHistoryChart),
 		),
 		ui.NewRow(1.0/3,
+			ui.NewCol(1.0, processList),
+		),
+	)
+}
+
+func setGPUMemoryLayoutGrid() {
+	grid.Set(
+		ui.NewRow(1.0/4,
+			ui.NewCol(1.0/2, gpuGauge),
+			ui.NewCol(1.0/2, memoryGauge),
+		),
+		ui.NewRow(1.0/4,
+			ui.NewCol(1.0/2, gpuSparklineGroup),
+			ui.NewCol(1.0/2, memoryHistoryChart),
+		),
+		ui.NewRow(1.0/4,
+			ui.NewCol(1.0, memBWHistoryChart),
+		),
+		ui.NewRow(1.0/4,
 			ui.NewCol(1.0, processList),
 		),
 	)

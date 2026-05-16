@@ -98,6 +98,10 @@ func buildInfoLines(themeColor string) []string {
 		formatLine(i18n.T("Info_DRAMBW"), fmt.Sprintf(i18n.T("Info_DRAMBWValue"), lastCPUMetrics.DRAMReadBW, lastCPUMetrics.DRAMWriteBW, lastCPUMetrics.DRAMBWCombined)),
 	}
 
+	if bat := GetBatteryInfo(); bat.Present {
+		infoLines = append(infoLines, formatLine(i18n.T("Info_Battery"), fmt.Sprintf(i18n.T("Info_BatteryValue"), bat.Percent, batteryStateLabel(bat))))
+	}
+
 	// Fan section
 	if len(lastCPUMetrics.Fans) > 0 {
 		infoLines = append(infoLines, "")

@@ -33,11 +33,12 @@
 - **Thunderbolt bandwidth monitoring**: Real-time throughput for Thunderbolt Bridge interfaces
 - **Thunderbolt Device Tree**: Visual tree of connected Thunderbolt/USB4 devices and their speeds
 - **RDMA Support**: Detection of RDMA over Thunderbolt 5 availability
+- **Battery Monitoring**: Battery percentage and charging state on MacBooks (auto-detected; shown in TUI, headless output, and Prometheus metrics)
 - Disk I/O activity (read/write speeds)
 - Proportional per process GPU usage (experimental)
 - Multiple volume display (shows Mac HD + mounted external volumes)
 - Easy-to-read terminal UI
-- **18 Layouts**: (`l` to cycle layouts)
+- **19 Layouts**: (`l` to cycle layouts) — includes a GPU + Memory focused layout with a DRAM read/write bandwidth history chart
 - **Persistent Settings**: Remembers your Layout and Theme choice across restarts
 - Customizable UI color (green, red, blue, skyblue, magenta, yellow, gold, silver, white, lime, orange, violet, pink, and more) (`c` to cycle colors)
 - Customizable background color (`b` to cycle colors)
@@ -52,7 +53,7 @@
 - **Freeze**: Pause/Resume process list updates (`f`)
 - Party Mode (Randomly cycles through colors) (`p` to toggle)
 - Optional Prometheus Metrics server (default is disabled) (`-p <port>` or `--prometheus <port>`)
-  - Exports: CPU/GPU/ANE usage, E/P/S-core averages, per-core usage (labeled by type), power components, DRAM bandwidth (read/write/combined), memory, network, disk, fan RPM, temperature sensors, thermal state, and more
+  - Exports: CPU/GPU/ANE usage, E/P/S-core averages, per-core usage (labeled by type), power components, DRAM bandwidth (read/write/combined), memory, network, disk, fan RPM, temperature sensors, thermal state, battery (on MacBooks), and more
 - **macOS Menu Bar Mode**: Run as a native menu bar status item (`--menubar`) with sparkline charts, CPU/GPU/Memory gauges, power metrics, DRAM bandwidth, fan RPM, and full system stats
 - Support for all Apple Silicon models
 - **Auto-detect Light/Dark Mode**: Automatically adjusts UI colors based on your terminal's background color or system theme.
@@ -330,7 +331,7 @@ Use the following keys to interact with the application while its running:
 - `p`: Party Mode (Randomly cycles through colors)
 - `i`: Toggle Info layout (displays system info)
 - `F` (Shift+f): Toggle Fan & Thermals layout (fan monitoring + all temperature sensors)
-- `l`: Cycle through the 18 available layouts.
+- `l`: Cycle through the 19 available layouts.
 - `+` or `=`: Increase update interval (slower updates).
 - `-`: Decrease update interval (faster updates).
 - `F9`: Kill the currently selected process (pauses updates while selecting).

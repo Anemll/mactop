@@ -355,3 +355,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Kablosuz"
 TempCategory_Display = "Ekran"
 TempCategory_Other = "Diğer"
+
+Info_Battery = "Battery"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "charging"
+Info_BatteryDischarging = "on battery"
+Info_BatteryAC = "AC"
+
+TUI_MemoryBandwidthHistory = "Memory Bandwidth History"
+Metrics_MemBWHistoryDetail = "DRAM Bandwidth: %.1f GB/s"

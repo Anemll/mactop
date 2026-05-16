@@ -50,10 +50,14 @@ var (
 
 	// StepChart widgets for History layout
 	gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart *w.StepChart
+	memBWHistoryChart                                                       *w.StepChart
 	memoryUsedHistory                                                       = make([]float64, 100)
 	swapUsedHistory                                                         = make([]float64, 100)
 	cpuUsageHistory                                                         = make([]float64, 100)
 	powerUsageHistory                                                       = make([]float64, 100)
+	memBWReadHistory                                                        = make([]float64, 100)
+	memBWWriteHistory                                                       = make([]float64, 100)
+	maxMemBWSeen                                                            float64
 
 	cpuCoreWidget                 *CPUCoreWidget
 	powerValues                   = make([]float64, 35)
@@ -259,6 +263,20 @@ var (
 		prometheus.GaugeOpts{
 			Name: "mactop_rdma_available",
 			Help: "RDMA availability status (1=available, 0=unavailable)",
+		},
+	)
+
+	batteryPercent = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mactop_battery_percent",
+			Help: "Battery charge percentage (0-100, -1 if no battery)",
+		},
+	)
+
+	batteryCharging = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mactop_battery_charging",
+			Help: "1 if battery is charging, 0 otherwise",
 		},
 	)
 
