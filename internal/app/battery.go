@@ -82,7 +82,6 @@ type BatteryInfo struct {
 }
 
 var (
-	hasBatteryCached  bool
 	hasBatteryOnce    sync.Once
 	hasBatteryPresent bool
 )
@@ -111,7 +110,6 @@ func GetBatteryInfo() BatteryInfo {
 func HasBattery() bool {
 	hasBatteryOnce.Do(func() {
 		hasBatteryPresent = GetBatteryInfo().Present
-		hasBatteryCached = true
 	})
 	return hasBatteryPresent
 }
