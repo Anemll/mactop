@@ -685,6 +685,7 @@ func Run() {
 	} else if envLang := os.Getenv("MACTOP_LANG"); envLang != "" {
 		resolvedLanguage = envLang
 	}
+	currentConfig.Language = resolvedLanguage
 	i18n.Init(resolvedLanguage)
 
 	// If cli.go didn't catch --foreground (e.g., because it used an '=' sign like --foreground=green)
