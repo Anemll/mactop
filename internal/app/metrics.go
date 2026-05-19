@@ -277,6 +277,13 @@ func updatePrometheusThunderbolt(tbStats []ThunderboltNetStats, rdmaStatus RDMAS
 }
 
 func publishPrometheusNetDiskMetrics(metrics NetDiskMetrics) {
+	// Same allocation-avoidance guard as publishPrometheusMetrics — every
+	// .With(prometheus.Labels{...}).Set() builds a transient labels map, and
+	// this is called every tick from collectNetDiskMetrics regardless of
+	// whether the exporter is enabled.
+	if prometheusPort == "" {
+		return
+	}
 	networkSpeed.With(prometheus.Labels{"direction": "upload"}).Set(metrics.OutBytesPerSec / 1024)
 	networkSpeed.With(prometheus.Labels{"direction": "download"}).Set(metrics.InBytesPerSec / 1024)
 	diskIOSpeed.With(prometheus.Labels{"operation": "read"}).Set(metrics.ReadKBytesPerSec)
