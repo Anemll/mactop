@@ -9,6 +9,7 @@
 #import <IOKit/IOCFPlugIn.h>
 #include <mach/mach_host.h>
 #include <mach/mach_init.h>
+#include <mach/mach_time.h>
 #include <mach/processor_info.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -226,6 +227,37 @@ static IOHIDEventSystemClientRef getHIDClient(void) {
     }
   }
   return g_hidClient;
+}
+
+// Cached HID services array. IOHIDEventSystemClientCopyServices is an IPC to
+// hidd that allocates a CFArray plus a CFTypeRef per service every call —
+// significant CF / DRAM traffic when invoked once per sample tick. The HID
+// service topology is stable on a running Mac (NVMe hotplug etc. is rare), so
+// we cache the array and refresh every HID_SERVICES_TTL_NS. Callers receive
+// a *borrowed* reference and MUST NOT CFRelease it; the cache owns the +1.
+static CFArrayRef g_hidServicesCache = NULL;
+static uint64_t g_hidServicesCacheTimeNs = 0;
+static const uint64_t HID_SERVICES_TTL_NS = 5000000000ULL; // 5s
+
+static CFArrayRef getCachedHIDServices(void) {
+  static mach_timebase_info_data_t tb = {0, 0};
+  if (tb.denom == 0) mach_timebase_info(&tb);
+  uint64_t nowNs = mach_absolute_time() * tb.numer / tb.denom;
+  if (g_hidServicesCache != NULL &&
+      (nowNs - g_hidServicesCacheTimeNs) < HID_SERVICES_TTL_NS) {
+    return g_hidServicesCache;
+  }
+  IOHIDEventSystemClientRef client = getHIDClient();
+  if (client == NULL) return g_hidServicesCache; // may be NULL
+  CFArrayRef fresh = IOHIDEventSystemClientCopyServices(client);
+  if (fresh == NULL) {
+    // hidd transient failure — keep prior cache rather than reporting empty.
+    return g_hidServicesCache;
+  }
+  if (g_hidServicesCache != NULL) CFRelease(g_hidServicesCache);
+  g_hidServicesCache = fresh;
+  g_hidServicesCacheTimeNs = nowNs;
+  return g_hidServicesCache;
 }
 
 static int cfStringStartsWith(CFStringRef str, const char *prefix);
@@ -1241,6 +1273,10 @@ typedef struct {
   float gpuTemp;
   int64_t dramReadBytes;
   int64_t dramWriteBytes;
+  // Actual wall-clock interval (ns) between the two IOReport samples used to
+  // derive dramReadBytes/dramWriteBytes. Used by Go to compute exact GB/s
+  // independent of scheduling jitter on usleep(durationMs).
+  int64_t actualDurationNs;
   // Fan data
   int fanCount;
   fan_info_t fans[8];
@@ -1675,12 +1711,8 @@ static int readHIDCoreTempSensors(temp_sensor_t *out, int maxSensors,
   *outScount = 0;
   *outGPUcount = 0;
 
-  IOHIDEventSystemClientRef client = getHIDClient();
-  if (client == NULL) {
-    return 0;
-  }
-
-  CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
+  // Use the cached HID services array (borrowed reference — do NOT release).
+  CFArrayRef services = getCachedHIDServices();
   if (services == NULL) {
     return 0;
   }
@@ -1780,7 +1812,7 @@ static int readHIDCoreTempSensors(temp_sensor_t *out, int maxSensors,
   *outScount = sIdx;
   *outGPUcount = gpuIdx;
 
-  CFRelease(services);
+  // services is a borrowed reference from getCachedHIDServices — do NOT release.
   return count;
 }
 
@@ -1808,12 +1840,12 @@ static float readSocTemperature(float *outCpuTemp, float *outGpuTemp) {
     }
   }
 
-  // Fallback to HID if SMC failed — reuse cached client
+  // Fallback to HID if SMC failed — reuse cached client + cached services
   if (cpuCount == 0 || gpuCount == 0) {
-    IOHIDEventSystemClientRef client = getHIDClient();
-    if (client != NULL) {
-      CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
-      if (services != NULL) {
+    // Borrowed reference — do NOT release.
+    CFArrayRef services = getCachedHIDServices();
+    if (services != NULL) {
+      {
         CFIndex count = CFArrayGetCount(services);
         for (CFIndex i = 0; i < count; i++) {
           IOHIDServiceClientRef service =
@@ -1858,7 +1890,7 @@ static float readSocTemperature(float *outCpuTemp, float *outGpuTemp) {
             }
           }
         }
-        CFRelease(services);
+        // services is a borrowed reference from getCachedHIDServices — do NOT release.
       }
     }
   }
@@ -2035,6 +2067,13 @@ PowerMetrics samplePowerMetrics(int durationMs) {
 
   @autoreleasepool {
 
+  // Capture wall-clock interval between the two IOReport snapshots so that
+  // DRAM BW (bytes / time) reflects the true measurement window rather than
+  // the requested usleep target (which jitters under scheduling pressure).
+  static mach_timebase_info_data_t s_tb = {0, 0};
+  if (s_tb.denom == 0) mach_timebase_info(&s_tb);
+  uint64_t t1 = mach_absolute_time();
+
   CFDictionaryRef sample1 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
 
@@ -2045,6 +2084,10 @@ PowerMetrics samplePowerMetrics(int durationMs) {
 
   CFDictionaryRef sample2 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
+  uint64_t t2 = mach_absolute_time();
+  if (s_tb.denom != 0) {
+    metrics.actualDurationNs = (int64_t)((t2 - t1) * s_tb.numer / s_tb.denom);
+  }
 
   if (sample2 == NULL) {
     CFRelease(sample1);
@@ -2362,8 +2405,12 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     double activePower = metrics.dramPower - g_dramIdlePowerW;
     if (activePower < 0) activePower = 0;
     double dramBwGBs = activePower * g_dramGBsPerWatt;
-    // Convert to bytes for this sample interval
-    double sampleSec = (double)durationMs / 1000.0;
+    // Convert to bytes for this sample interval. Use the actual wall-clock
+    // interval (captured around the IOReport snapshots) when available so
+    // the Go-side division by the same interval recovers dramBwGBs exactly.
+    double sampleSec = (metrics.actualDurationNs > 0)
+                          ? (double)metrics.actualDurationNs / 1e9
+                          : (double)durationMs / 1000.0;
     int64_t totalBytes = (int64_t)(dramBwGBs * 1e9 * sampleSec);
     // Split evenly between read and write (power can't distinguish direction)
     metrics.dramReadBytes = totalBytes / 2;
@@ -2548,6 +2595,12 @@ void cleanupIOReport() {
   if (g_smcConn) {
     SMCClose(g_smcConn);
     g_smcConn = 0;
+  }
+  // Clean up cached HID services array (owned +1) before its client.
+  if (g_hidServicesCache != NULL) {
+    CFRelease(g_hidServicesCache);
+    g_hidServicesCache = NULL;
+    g_hidServicesCacheTimeNs = 0;
   }
   // Clean up cached HID client
   if (g_hidClient) {

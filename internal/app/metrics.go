@@ -199,6 +199,13 @@ func updatePrometheusSystemInfo(sysInfo SystemInfo) {
 }
 
 func publishPrometheusMetrics(snapshot prometheusMetricsSnapshot) {
+	// Skip all Set/With calls when the exporter is disabled. Each Gauge.Set on
+	// a *Vec metric allocates a prometheus.Labels map plus fmt.Sprintf strings
+	// per fan / sensor / core — pure waste in TUI-only mode and the dominant
+	// per-tick allocation source on systems with many temperature sensors.
+	if prometheusPort == "" {
+		return
+	}
 	updatePrometheusSystemInfo(snapshot.SystemInfo)
 
 	cpuMetrics := snapshot.CPUMetrics

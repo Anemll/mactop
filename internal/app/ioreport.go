@@ -81,6 +81,7 @@ typedef struct {
     float gpuTemp;
     int64_t dramReadBytes;
     int64_t dramWriteBytes;
+    int64_t actualDurationNs;
     int fanCount;
     fan_info_t fans[8];
     int tempSensorCount;
@@ -179,11 +180,20 @@ func DumpIOReportDebug() {
 func sampleSocMetrics(durationMs int) SocMetrics {
 	pm := C.samplePowerMetrics(C.int(durationMs))
 
+	// Prefer actual wall-clock interval captured in C around the two IOReport
+	// snapshots — that is the true window the byte counters span. Fall back to
+	// the requested durationMs only if the C timing was unavailable. Using the
+	// actual interval keeps GB/s correct under scheduler jitter and under the
+	// power-derived fallback (M5+), which scales bytes by sampleSec internally.
 	var dramReadBW, dramWriteBW, dramBWCombined float64
-	if durationMs > 0 {
-		dramReadBW = float64(pm.dramReadBytes) / float64(durationMs) * 1000.0 / 1e9
-		dramWriteBW = float64(pm.dramWriteBytes) / float64(durationMs) * 1000.0 / 1e9
-		dramBWCombined = float64(pm.dramReadBytes+pm.dramWriteBytes) / float64(durationMs) * 1000.0 / 1e9
+	intervalSec := float64(pm.actualDurationNs) / 1e9
+	if intervalSec <= 0 && durationMs > 0 {
+		intervalSec = float64(durationMs) / 1000.0
+	}
+	if intervalSec > 0 {
+		dramReadBW = float64(pm.dramReadBytes) / intervalSec / 1e9
+		dramWriteBW = float64(pm.dramWriteBytes) / intervalSec / 1e9
+		dramBWCombined = float64(pm.dramReadBytes+pm.dramWriteBytes) / intervalSec / 1e9
 	}
 
 	// Convert fan data from C arrays to Go slices
