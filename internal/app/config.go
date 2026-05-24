@@ -5,6 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+)
+
+// Coalesce rapid saveConfig calls into one disk write so if you spam +/- (which I do a lot) it doesn't block the event loop on per-press file I/O.
+const saveDebounceInterval = 500 * time.Millisecond
+
+var (
+	saveDebounceMu    sync.Mutex
+	saveDebounceTimer *time.Timer
+	pendingSaveData   []byte
+	pendingSavePath   string
 )
 
 // CustomThemeConfig holds custom hex color values for theming
@@ -266,7 +278,50 @@ func saveConfig() {
 		return
 	}
 
-	os.WriteFile(configPath, data, 0644)
+	// Marshal at schedule time so the value the user just set is the one that lands on disk, even if currentConfig keeps changing before the timer fires.
+	saveDebounceMu.Lock()
+	pendingSaveData = data
+	pendingSavePath = configPath
+	if saveDebounceTimer != nil {
+		saveDebounceTimer.Stop()
+	}
+	saveDebounceTimer = time.AfterFunc(saveDebounceInterval, flushPendingSave)
+	saveDebounceMu.Unlock()
+}
+
+func flushPendingSave() {
+	saveDebounceMu.Lock()
+	data := pendingSaveData
+	path := pendingSavePath
+	pendingSaveData = nil
+	pendingSavePath = ""
+	saveDebounceMu.Unlock()
+
+	if data != nil && path != "" {
+		saveConfigNow(data, path)
+	}
+}
+
+// saveConfigFlush forces any pending debounced save to disk.
+func saveConfigFlush() {
+	saveDebounceMu.Lock()
+	if saveDebounceTimer != nil {
+		saveDebounceTimer.Stop()
+		saveDebounceTimer = nil
+	}
+	data := pendingSaveData
+	path := pendingSavePath
+	pendingSaveData = nil
+	pendingSavePath = ""
+	saveDebounceMu.Unlock()
+
+	if data != nil && path != "" {
+		saveConfigNow(data, path)
+	}
+}
+
+func saveConfigNow(data []byte, path string) {
+	os.WriteFile(path, data, 0644)
 }
 
 // loadThemeFile loads custom theme from ~/.mactop/theme.json if it exists
