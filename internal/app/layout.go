@@ -42,7 +42,7 @@ func setupGrid() {
 	applyLayout(currentConfig.DefaultLayout)
 }
 
-func cycleLayout() {
+func cycleLayout(step int) {
 	currentIndex := 0
 	for i, layout := range layoutOrder {
 		if layout == currentConfig.DefaultLayout {
@@ -50,10 +50,11 @@ func cycleLayout() {
 			break
 		}
 	}
-	nextIndex := (currentIndex + 1) % len(layoutOrder)
+	n := len(layoutOrder)
+	nextIndex := ((currentIndex+step)%n + n) % n
 	currentConfig.DefaultLayout = layoutOrder[nextIndex]
 	currentLayoutNum = nextIndex
-	totalLayouts = len(layoutOrder)
+	totalLayouts = n
 	applyLayout(currentConfig.DefaultLayout)
 	updateHelpText()
 }
