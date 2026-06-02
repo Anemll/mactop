@@ -142,10 +142,10 @@ Interval Pembaruan: %dms
 
 ----Kontrol----
 - r: Perbarui data UI secara manual
-- c: Ubah tema warna
-- b: Ubah warna latar
+- c / Shift + C: Ubah tema warna maju / mundur
+- b / Shift + B: Ubah warna latar maju / mundur
 - p: Mode pesta (siklus warna)
-- l: Beralih antara 18 tata letak
+- l / Shift + L: Beralih antara 19 tata letak maju / mundur
 - i: Tampilkan/sembunyikan panel info
 - Shift + F: Kontrol kipas dan panel termal
 - F9: Hentikan proses yang dipilih (y/t)

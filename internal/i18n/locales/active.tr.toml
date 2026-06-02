@@ -142,10 +142,10 @@ Güncelleme Aralığı: %dms
 
 ----Kontroller----
 - r: UI verilerini manuel olarak yenile
-- c: UI renk temasını değiştir
-- b: UI arka plan rengini değiştir
+- c / Shift + C: UI renk temasını değiştir ileri / geri
+- b / Shift + B: UI arka plan rengini değiştir ileri / geri
 - p: Parti modunu aç/kapat (renk döngüsü)
-- l: 18 mevcut düzen arasında geçiş yap
+- l / Shift + L: 19 mevcut düzen arasında geçiş yap ileri / geri
 - i: Bilgi panelini göster/gizle
 - Shift + F: Fan kontrolü ve termal paneli
 - F9: Seçili işlemi sonlandır (e/h)

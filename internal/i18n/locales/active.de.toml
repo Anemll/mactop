@@ -142,10 +142,10 @@ Aktualisierungsintervall: %dms
 
 ----Steuerung----
 - r: UI-Daten manuell aktualisieren
-- c: UI-Farbthemen durchschalten
-- b: UI-Hintergrundfarben durchschalten
+- c / Shift + C: UI-Farbthemen durchschalten vorwärts / rückwärts
+- b / Shift + B: UI-Hintergrundfarben durchschalten vorwärts / rückwärts
 - p: Partymodus umschalten (Farbzyklus)
-- l: Die 18 verfügbaren Layouts durchwechseln
+- l / Shift + L: Die 19 verfügbaren Layouts durchwechseln vorwärts / rückwärts
 - i: Informationslayout umschalten
 - Shift + F: Lüftersteuerung und Temperatur-Layout
 - F9: Ausgewählten Prozess beenden (j/n bestätigen)

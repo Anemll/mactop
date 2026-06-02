@@ -142,10 +142,10 @@ Verversingsinterval: %dms
 
 ----Bediening----
 - r: UI-gegevens handmatig vernieuwen
-- c: UI-kleurthema wisselen
-- b: UI-achtergrondkleur wisselen
+- c / Shift + C: UI-kleurthema wisselen vooruit / achteruit
+- b / Shift + B: UI-achtergrondkleur wisselen vooruit / achteruit
 - p: Feestmodus aan/uit (kleurcyclus)
-- l: Door 18 beschikbare layouts bladeren
+- l / Shift + L: Door 19 beschikbare layouts bladeren vooruit / achteruit
 - i: Informatiepaneel tonen/verbergen
 - Shift + F: Ventilatorregeling en thermisch paneel
 - F9: Geselecteerd proces beëindigen (j/n)

@@ -142,10 +142,10 @@ Intervalo: %dms
 
 ----Controles----
 - r: Atualizar
-- c: Mudar tema
-- b: Mudar cor de fundo
+- c / Shift + C: Mudar tema para frente / para trás
+- b / Shift + B: Mudar cor de fundo para frente / para trás
 - p: Modo Festa
-- l: Alternar entre layouts
+- l / Shift + L: Alternar entre layouts para frente / para trás
 - i: Ativar as Informações
 - Shift + F: Ventiladores & Temperatura
 - F9: Matar processo (s/n)

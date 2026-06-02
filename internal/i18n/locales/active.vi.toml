@@ -142,10 +142,10 @@ Tần suất cập nhật: %dms
 
 ----Điều khiển----
 - r: Làm mới dữ liệu UI thủ công
-- c: Đổi chủ đề màu
-- b: Đổi màu nền
+- c / Shift + C: Đổi chủ đề màu tiến / lùi
+- b / Shift + B: Đổi màu nền tiến / lùi
 - p: Chế độ tiệc (vòng lặp màu)
-- l: Chuyển đổi 18 bố cục
+- l / Shift + L: Chuyển đổi 19 bố cục tiến / lùi
 - i: Hiện/ẩn bảng thông tin
 - Shift + F: Điều khiển quạt và bảng nhiệt
 - F9: Kết thúc tiến trình đã chọn (c/k)

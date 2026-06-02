@@ -142,10 +142,10 @@ Intervalo de actualización: %dms
 
 ----Controles----
 - r: Refrescar la UI manualmente
-- c: Cambiar tema de colores
-- b: Cambiar color de fondo
+- c / Shift + C: Cambiar tema de colores adelante / atrás
+- b / Shift + B: Cambiar color de fondo adelante / atrás
 - p: Modo Fiesta (ciclo de colores)
-- l: Recorrer los 18 diseños disponibles
+- l / Shift + L: Recorrer los 19 diseños disponibles adelante / atrás
 - i: Alternar pantalla de información
 - Shift + F: Alternar control de ventilador y panel térmico
 - F9: Matar el proceso seleccionado (confirmar s/n)

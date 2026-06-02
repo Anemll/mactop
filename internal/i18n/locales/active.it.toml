@@ -142,10 +142,10 @@ Intervallo Aggiornamento: %dms
 
 ----Controlli----
 - r: Aggiorna manualmente i dati UI
-- c: Cambia tema colori
-- b: Cambia colore sfondo
+- c / Shift + C: Cambia tema colori avanti / indietro
+- b / Shift + B: Cambia colore sfondo avanti / indietro
 - p: Modalità festa (ciclo colori)
-- l: Scorri i 18 layout disponibili
+- l / Shift + L: Scorri i 19 layout disponibili avanti / indietro
 - i: Mostra/nascondi pannello informazioni
 - Shift + F: Controllo ventole e pannello termico
 - F9: Termina il processo selezionato (s/n)

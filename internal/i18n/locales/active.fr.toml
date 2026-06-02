@@ -142,10 +142,10 @@ Fréquence MAJ: %dms
 
 ----Contrôles----
 - r: Actualiser manuellement
-- c: Changer de thème de couleur
-- b: Changer la couleur de fond
+- c / Shift + C: Changer de thème de couleur avant / arrière
+- b / Shift + B: Changer la couleur de fond avant / arrière
 - p: Mode fête (cycle de couleurs)
-- l: Parcourir les 18 dispositions
+- l / Shift + L: Parcourir les 19 dispositions avant / arrière
 - i: Afficher la page Infos
 - Shift + F: Contrôle des ventilateurs & Thermiques
 - F9: Tuer le processus sélectionné (o/n)

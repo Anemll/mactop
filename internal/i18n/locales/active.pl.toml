@@ -142,10 +142,10 @@ Interwał odświeżania: %dms
 
 ----Sterowanie----
 - r: Ręczne odświeżenie danych UI
-- c: Zmień motyw kolorów
-- b: Zmień kolor tła
+- c / Shift + C: Zmień motyw kolorów w przód / w tył
+- b / Shift + B: Zmień kolor tła w przód / w tył
 - p: Tryb imprezowy (cykl kolorów)
-- l: Przełączaj między 18 układami
+- l / Shift + L: Przełączaj między 19 układami w przód / w tył
 - i: Pokaż/ukryj panel informacyjny
 - Shift + F: Sterowanie wentylatorami i panel termiczny
 - F9: Zakończ wybrany proces (t/n)
