@@ -556,7 +556,7 @@ func GetProcessTextColor(isCurrentUser bool) string {
 	return "#888888" // Grey for non-current-user (root/system) processes
 }
 
-func cycleTheme() {
+func cycleTheme(step int) {
 	currentIndex := 0
 	for i, name := range themeOrder {
 		if name == currentConfig.Theme {
@@ -564,7 +564,8 @@ func cycleTheme() {
 			break
 		}
 	}
-	nextIndex := (currentIndex + 1) % len(themeOrder)
+	n := len(themeOrder)
+	nextIndex := ((currentIndex+step)%n + n) % n
 	currentColorName = themeOrder[nextIndex]
 
 	// When cycling themes, clear the custom theme configuration to prevent
@@ -601,9 +602,10 @@ func applyInitialBackground() {
 	applyBackground(bgName)
 }
 
-// cycleBackground cycles through background colors
-func cycleBackground() {
-	currentBgIndex = (currentBgIndex + 1) % len(bgColorOrder)
+// cycleBackground cycles through background colors. Positive step advances, negative reverses.
+func cycleBackground(step int) {
+	n := len(bgColorOrder)
+	currentBgIndex = ((currentBgIndex+step)%n + n) % n
 	bgName := bgColorOrder[currentBgIndex]
 	applyBackground(bgName)
 	currentConfig.Background = bgName

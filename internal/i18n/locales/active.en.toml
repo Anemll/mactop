@@ -148,10 +148,10 @@ Update Interval: %dms
 
 ----Controls----
 - r: Refresh the UI data manually
-- c: Cycle through UI color themes
-- b: Cycle through UI background colors
+- c / Shift + C: Cycle UI color themes forward / backward
+- b / Shift + B: Cycle UI background colors forward / backward
 - p: Toggle party mode (color cycling)
-- l: Cycle through the 18 available layouts
+- l / Shift + L: Cycle through the 18 available layouts forward / backward
 - i: Toggle information layout
 - Shift + F: Toggle fan control & thermals layout
 - F9: Kill selected process (y/n confirm)

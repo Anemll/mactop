@@ -418,7 +418,7 @@ func togglePartyMode() {
 					partyTicker.Stop()
 					return
 				}
-				cycleTheme()
+				cycleTheme(1)
 				renderMutex.Lock()
 				updateProcessList()
 				width, height := ui.TerminalDimensions()

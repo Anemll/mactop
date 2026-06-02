@@ -201,11 +201,11 @@ func handleFanResetAuto() {
 	drawScreen(w, h)
 }
 
-func handleThemeCycle() {
+func handleThemeCycle(step int) {
 	renderMutex.Lock()
 	w, h := ui.TerminalDimensions()
 	updateLayout(w, h)
-	cycleTheme()
+	cycleTheme(step)
 	renderMutex.Unlock()
 	renderMutex.Lock()
 	updateProcessList()
@@ -214,9 +214,9 @@ func handleThemeCycle() {
 	renderMutex.Unlock()
 }
 
-func handleLayoutCycle() {
+func handleLayoutCycle(step int) {
 	renderMutex.Lock()
-	cycleLayout()
+	cycleLayout(step)
 	renderMutex.Unlock()
 	saveConfig()
 	renderMutex.Lock()
@@ -225,9 +225,9 @@ func handleLayoutCycle() {
 	renderMutex.Unlock()
 }
 
-func handleBackgroundCycle() {
+func handleBackgroundCycle(step int) {
 	renderMutex.Lock()
-	cycleBackground()
+	cycleBackground(step)
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
 	renderMutex.Unlock()
