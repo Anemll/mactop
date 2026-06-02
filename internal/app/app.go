@@ -1419,6 +1419,7 @@ func shutdownAndExit(closeDone bool) {
 			}()
 		}
 		shutdownWorkers()
+		saveConfigFlush()
 		ui.Close()
 		os.Exit(0)
 	})
