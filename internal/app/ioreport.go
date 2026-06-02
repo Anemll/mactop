@@ -184,7 +184,7 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 	// snapshots — that is the true window the byte counters span. Fall back to
 	// the requested durationMs only if the C timing was unavailable. Using the
 	// actual interval keeps GB/s correct under scheduler jitter and under the
-	// power-derived fallback (M5+), which scales bytes by sampleSec internally.
+	// power-derived fallback, which scales bytes by sampleSec internally.
 	var dramReadBW, dramWriteBW, dramBWCombined float64
 	intervalSec := float64(pm.actualDurationNs) / 1e9
 	if intervalSec <= 0 && durationMs > 0 {

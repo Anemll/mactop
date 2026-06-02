@@ -660,6 +660,12 @@ func Run() {
 
 	colorName, interval, setColor, setInterval := handleLegacyFlags()
 
+	// Fail fast on Intel Macs. handleLegacyFlags already handled --version /
+	// --help (which os.Exit), so by this point the user actually intends to
+	// run the TUI / a diagnostic dump — both of which depend on Apple Silicon
+	// IOReport channels and would otherwise hang at the loading screen.
+	requireAppleSilicon()
+
 	logfile, err := setupLogfile()
 	if err != nil {
 		stderrLogger.Fatalf("failed to setup log file: %v", err)

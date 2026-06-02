@@ -88,7 +88,11 @@ func TestSaveAndLoadConfigUseXDGConfigHome(t *testing.T) {
 		Interval:      1500,
 		SortReverse:   true,
 	}
+	// saveConfig() debounces the actual disk write; saveConfigFlush() forces
+	// it synchronously (same path used on quit). Without the flush the file
+	// would not exist until the debounce timer fires.
 	saveConfig()
+	saveConfigFlush()
 
 	configPath := filepath.Join(configHome, "mactop", "config.json")
 	if _, err := os.Stat(configPath); err != nil {
