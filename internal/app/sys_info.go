@@ -263,18 +263,20 @@ const (
 	thermalStateCritical thermalStateLevel = 3
 )
 
+// getThermalStateLevel reports the current system thermal pressure.
+//
+// It uses NSProcessInfo.thermalState (via getSocThermalState), which is the
+// supported thermal-pressure API on Apple Silicon and matches what the OS and
+// `powermetrics --samplers thermal` report. The previous implementation read
+// the `machdep.xcpm.cpu_thermal_level` sysctl, but that OID is Intel-only
+// (xcpm = Intel power management) and does not exist on Apple Silicon — the
+// lookup always failed, pinning the reading to "Nominal" on every M-series
+// Mac regardless of actual thermal pressure (issue #71).
+//
+// NSProcessInfoThermalState values map directly onto our enum:
+// Nominal=0, Fair=1, Serious=2, Critical=3.
 func getThermalStateLevel() thermalStateLevel {
-	name := C.CString("machdep.xcpm.cpu_thermal_level")
-	defer C.free(unsafe.Pointer(name))
-
-	var val int32
-	size := C.size_t(unsafe.Sizeof(val))
-
-	if C.sysctlbyname(name, unsafe.Pointer(&val), &size, nil, 0) != 0 {
-		return thermalStateNominal
-	}
-
-	switch val {
+	switch getSocThermalState() {
 	case 0:
 		return thermalStateNominal
 	case 1:
