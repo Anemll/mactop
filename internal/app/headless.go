@@ -564,7 +564,10 @@ func collectHeadlessData(tbInfo *ThunderboltOutput, sysInfo SystemInfo) Headless
 		Fans:                  headlessFans,
 		Temperatures:          orderedTemps,
 	}
-	if bat := GetBatteryInfo(); bat.Present {
+	// Gate on Displayable (not just Present) so headless JSON/CSV never emit a
+	// bogus -1% charge when IOKit capacity keys are missing — matching the TUI,
+	// info panel, and Prometheus, which all skip undisplayable readings.
+	if bat := GetBatteryInfo(); bat.Displayable() {
 		output.Battery = &bat
 	}
 	if sysInfo.ECoreCount > 0 {

@@ -757,15 +757,38 @@ static void ensurePMPDramChannels(void) {
   if (pmpChan == NULL)
     return;
 
-  IOReportMergeChannels((CFDictionaryRef)g_channels, pmpChan, NULL);
+  // Merge into a COPY rather than mutating g_channels in place. If creating
+  // the new subscription fails, g_channels and g_subscription must stay
+  // consistent (both pre-PMP) — otherwise IOReportCreateSamples would run a
+  // subscription that doesn't cover the merged channel set, and PMP DRAM
+  // fallback data would never arrive. Only swap both in together on success.
+  //
+  // Safe to release the old subscription here: ensurePMPDramChannels runs at
+  // most once (guarded by g_pmp_channels_attempted) and, on the fallback path,
+  // strictly before startBgCalibrationOnce() spawns the calibration thread, so
+  // nothing else is touching g_subscription at swap time.
+  CFMutableDictionaryRef merged =
+      CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, g_channels);
+  if (merged == NULL) {
+    CFRelease(pmpChan);
+    return;
+  }
+  IOReportMergeChannels((CFDictionaryRef)merged, pmpChan, NULL);
   CFRelease(pmpChan);
 
   CFMutableDictionaryRef subsystem = NULL;
   IOReportSubscriptionRef newSub =
-      IOReportCreateSubscription(NULL, g_channels, &subsystem, 0, NULL);
-  if (newSub != NULL) {
-    g_subscription = newSub;
+      IOReportCreateSubscription(NULL, merged, &subsystem, 0, NULL);
+  if (newSub == NULL) {
+    CFRelease(merged); // keep the working pre-PMP channels/subscription
+    return;
   }
+
+  if (g_subscription != NULL)
+    CFRelease(g_subscription);
+  CFRelease(g_channels);
+  g_channels = merged;
+  g_subscription = newSub;
 }
 
 // Run auto-calibration when power-based DRAM BW is needed.
