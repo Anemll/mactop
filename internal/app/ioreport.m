@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <notify.h>
 
 // Wi-Fi link info structure
 typedef struct {
@@ -2897,10 +2898,46 @@ void cleanupIOReport() {
   }
 }
 
+// getThermalState returns the current system thermal pressure level
+// (0=Nominal, 1=Fair, 2=Serious, 3=Critical).
+//
+// It reads the kernel notification "com.apple.system.thermalpressurelevel" —
+// the same authoritative source `powermetrics --samplers thermal` uses for its
+// "Current pressure level", and the signal NSProcessInfo.thermalState is built
+// on. We query it via notify_get_state rather than NSProcessInfo.thermalState
+// because the Foundation property only refreshes when its change notification
+// is serviced on an active run loop; mactop is a polling TUI with no Foundation
+// run loop, so NSProcessInfo.thermalState can return a stale value and stay
+// pinned at "Nominal". notify_get_state actively queries the live kernel state
+// on every call with no run-loop dependency (issue #71).
+//
+// The notification value is the same 0..3 scale NSProcessInfoThermalState
+// exposes; anything above Critical is clamped to Critical.
 int getThermalState() {
+  static int s_token = -1;
+  static int s_registered = 0;
+
+  if (!s_registered) {
+    uint32_t r = notify_register_check(
+        "com.apple.system.thermalpressurelevel", &s_token);
+    s_registered = (r == NOTIFY_STATUS_OK);
+    if (!s_registered)
+      s_token = -1;
+  }
+
+  if (s_token != -1) {
+    uint64_t state = 0;
+    if (notify_get_state(s_token, &state) == NOTIFY_STATUS_OK) {
+      if (state > 3)
+        return 3; // clamp to Critical
+      return (int)state;
+    }
+  }
+
+  // Fallback: the supported public API (may be stale without a run loop, but
+  // better than nothing if the notification is unavailable).
   @autoreleasepool {
-    NSProcessInfo *info = [NSProcessInfo processInfo];
-    return (int)[info thermalState];
+    return (int)[[NSProcessInfo processInfo] thermalState];
   }
 }
 
