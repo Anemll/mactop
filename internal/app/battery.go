@@ -114,6 +114,15 @@ func HasBattery() bool {
 	return hasBatteryPresent
 }
 
+// Displayable reports whether this reading has a usable charge percentage.
+// A host can have a battery (Present == true) while IOKit's capacity keys are
+// momentarily missing, in which case the C layer leaves Percent at -1. Such a
+// reading must not be rendered as a negative charge level, exported to
+// Prometheus, or shown in the info panel (issue: battery shows -1%).
+func (b BatteryInfo) Displayable() bool {
+	return b.Present && b.Percent >= 0 && b.Percent <= 100
+}
+
 // batteryStateLabel returns the localized state string for a battery.
 func batteryStateLabel(bat BatteryInfo) string {
 	switch {
@@ -129,7 +138,7 @@ func batteryStateLabel(bat BatteryInfo) string {
 // formatBatteryLine returns "Battery: 87% (charging)" or empty string if no battery.
 func formatBatteryLine() string {
 	bat := GetBatteryInfo()
-	if !bat.Present {
+	if !bat.Displayable() {
 		return ""
 	}
 	return fmt.Sprintf("%s: %d%% (%s)", i18n.T("Info_Battery"), bat.Percent, batteryStateLabel(bat))

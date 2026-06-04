@@ -174,14 +174,19 @@ func coreTypeForIndex(index int, sysInfo SystemInfo) string {
 	return "s"
 }
 
+// prometheusThermalStateValue maps the pressure level to a numeric gauge value
+// matching the OSThermalPressureLevel scale (Nominal=0 .. Sleeping=4). Unknown
+// reports 0.
 func prometheusThermalStateValue(level thermalStateLevel) float64 {
 	switch level {
-	case thermalStateFair:
+	case thermalStateModerate:
 		return 1
-	case thermalStateSerious:
+	case thermalStateHeavy:
 		return 2
-	case thermalStateCritical:
+	case thermalStateTrapping:
 		return 3
+	case thermalStateSleeping:
+		return 4
 	default:
 		return 0
 	}
@@ -248,7 +253,10 @@ func publishPrometheusMetrics(snapshot prometheusMetricsSnapshot) {
 	updatePrometheusThunderbolt(snapshot.TBNetStats, snapshot.RDMAStatus)
 	updatePrometheusSensors(cpuMetrics.Fans, cpuMetrics.TempSensors)
 
-	if bat := GetBatteryInfo(); bat.Present {
+	// -1 is the "battery unavailable" sentinel — used both when there is no
+	// battery and when one is present but its capacity is unreadable (Percent
+	// would otherwise be a bogus -1 charge level).
+	if bat := GetBatteryInfo(); bat.Displayable() {
 		batteryPercent.Set(float64(bat.Percent))
 		if bat.Charging {
 			batteryCharging.Set(1)

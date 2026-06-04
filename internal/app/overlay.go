@@ -25,7 +25,7 @@ typedef struct {
     double cpu_temp;
     double gpu_temp;
     char thermal_state[32];
-    int thermal_level; // 0=nominal, 1=fair, 2=serious, 3=critical
+    int thermal_level; // 0=nominal, 1=moderate, 2=heavy, 3=trapping, 4=sleeping
     char model_name[128];
     int gpu_core_count;
     int e_core_count;

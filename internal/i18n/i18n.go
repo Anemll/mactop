@@ -38,6 +38,15 @@ func Init(langOverride string) {
 	var langs []string
 
 	if langOverride != "" {
+		// Normalize explicit overrides (--lang, MACTOP_LANG, config.json) the
+		// same way auto-detection does, so locales like zh-TW / zh-Hant-TW /
+		// zh_TW.UTF-8 resolve to the shipped zh-Hant catalog and en-US -> en.
+		// The normalized tag goes first; the raw override is kept as a
+		// secondary preference in case a future catalog ships a more specific
+		// tag than the normalized primary subtag.
+		if tag := normalizeLanguageTag(langOverride); tag != "" && tag != langOverride {
+			langs = append(langs, tag)
+		}
 		langs = append(langs, langOverride)
 	} else {
 		sysLang := detectSystemLanguage()

@@ -2911,8 +2911,12 @@ void cleanupIOReport() {
 // pinned at "Nominal". notify_get_state actively queries the live kernel state
 // on every call with no run-loop dependency (issue #71).
 //
-// The notification value is the same 0..3 scale NSProcessInfoThermalState
-// exposes; anything above Critical is clamped to Critical.
+// The notification carries the OSThermalPressureLevel scale, which is what
+// powermetrics prints verbatim: 0=Nominal, 1=Moderate, 2=Heavy, 3=Trapping,
+// 4=Sleeping. (Empirically verified against `powermetrics --samplers thermal`:
+// notify value 2 <-> "Heavy".) This is a finer scale than the 4-state
+// NSProcessInfoThermalState, which re-buckets it — so we must NOT route through
+// NSProcessInfo, or e.g. a genuine "Heavy" pressure would mislabel as "Fair".
 int getThermalState() {
   static int s_token = -1;
   static int s_registered = 0;
@@ -2928,14 +2932,16 @@ int getThermalState() {
   if (s_token != -1) {
     uint64_t state = 0;
     if (notify_get_state(s_token, &state) == NOTIFY_STATUS_OK) {
-      if (state > 3)
-        return 3; // clamp to Critical
+      if (state > 4)
+        return 4; // clamp to highest known level (Sleeping)
       return (int)state;
     }
   }
 
-  // Fallback: the supported public API (may be stale without a run loop, but
-  // better than nothing if the notification is unavailable).
+  // Fallback: NSProcessInfo.thermalState if the notification is unavailable.
+  // Note this is the coarser 4-state scale (Nominal/Fair/Serious/Critical),
+  // which only approximately aligns with the pressure levels above; it may be
+  // stale without a run loop, but is better than nothing.
   @autoreleasepool {
     return (int)[[NSProcessInfo processInfo] thermalState];
   }
