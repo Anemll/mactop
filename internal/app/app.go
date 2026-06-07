@@ -753,9 +753,13 @@ func Run() {
 
 	startBackgroundWorkers()
 
-	// Ensure worker processes are killed on SIGINT/SIGTERM (e.g. terminal close)
+	// Ensure clean shutdown (worker processes killed, fans restored to auto) on
+	// SIGINT (Ctrl-C), SIGTERM (kill), and SIGHUP (terminal window closed).
+	// SIGHUP matters for --fan-control: without catching it, closing the
+	// terminal would terminate the process by default action and leave the fans
+	// pinned in manual mode.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		<-sigCh
 		shutdownAndExit(false)
@@ -1413,6 +1417,15 @@ var shutdownOnce sync.Once
 
 func shutdownAndExit(closeDone bool) {
 	shutdownOnce.Do(func() {
+		// Restore fans to automatic control FIRST. This is the only place fan
+		// cleanup reliably runs: every quit path (q key, SIGINT/SIGTERM) ends
+		// in os.Exit() below, which does NOT run deferred functions — so the
+		// `defer cleanupFanControl()` in Run() never fires. Without this,
+		// quitting while in --fan-control would leave the fans pinned in manual
+		// mode at whatever RPM was last set. cleanupFanControl is a no-op when
+		// fan control isn't active.
+		cleanupFanControl()
+
 		if closeDone {
 			// Scope the recover to just close(done): if the channel is
 			// already closed and panics, swallow it inside this inner
