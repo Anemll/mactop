@@ -293,6 +293,8 @@ Fan_NoFansDetected = "팬이 감지되지 않았습니다"
 Fan_NoTemperatureSensorsDetected = "온도 센서가 감지되지 않았습니다"
 Fan_ControlActive = "[⚠ 팬 제어 활성화됨](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 속도  [a](fg:%s,mod:bold) 자동  [0/9](fg:%s,mod:bold) 최소/최대  [R](fg:green,mod:bold) 초기화  [l](fg:%s) 레이아웃  [F](fg:%s) 종료"
 Fan_ReadOnly = "[읽기 전용](fg:%s)  쓰기를 허용하려면 --fan-control 사용  |  [l](fg:%s,mod:bold) 레이아웃  [F](fg:%s,mod:bold) 팬 보기 종료"
+Fan_NeedsRoot = "[⚠ 팬 제어에는 root 권한이 필요합니다 — 재실행: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 마지막 쓰기가 적용되지 않음 (OS 거부)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 총합 (최대: %.2f W)"
 Metrics_PowerSparklineTitle = "평균 %.2f W | %s"

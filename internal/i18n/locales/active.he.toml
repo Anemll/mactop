@@ -293,6 +293,8 @@ Fan_NoFansDetected = "לא זוהו מאווררים"
 Fan_NoTemperatureSensorsDetected = "לא זוהו חיישני טמפרטורה"
 Fan_ControlActive = "[⚠ בקרת מאווררים פעילה](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) מהירות  [a](fg:%s,mod:bold) אוטומטי  [0/9](fg:%s,mod:bold) מינ/מקס  [R](fg:green,mod:bold) איפוס  [l](fg:%s) פריסה  [F](fg:%s) יציאה"
 Fan_ReadOnly = "[קריאה בלבד](fg:%s)  השתמש ב---fan-control לכתיבה  |  [l](fg:%s,mod:bold) פריסה  [F](fg:%s,mod:bold) סגור תצוגת מאווררים"
+Fan_NeedsRoot = "[⚠ בקרת המאווררים דורשת root — הפעל מחדש עם: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ הכתיבה האחרונה לא נכנסה לתוקף (נדחתה על ידי מערכת ההפעלה)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W סה״כ (מקס: %.2f W)"
 Metrics_PowerSparklineTitle = "ממוצע %.2f W | %s"

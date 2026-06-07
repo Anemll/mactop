@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Nessuna ventola rilevata"
 Fan_NoTemperatureSensorsDetected = "Nessun sensore di temperatura rilevato"
 Fan_ControlActive = "[⚠ CONTROLLO VENTOLE ATTIVO](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Velocità  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Min/Max  [R](fg:green,mod:bold) Ripristina  [l](fg:%s) Layout  [F](fg:%s) Esci"
 Fan_ReadOnly = "[Sola lettura](fg:%s)  Usa --fan-control per abilitare la scrittura  |  [l](fg:%s,mod:bold) Layout  [F](fg:%s,mod:bold) Esci vista ventole"
+Fan_NeedsRoot = "[⚠ Il controllo ventole richiede root — riavvia con: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ l'ultima scrittura non ha avuto effetto (rifiutata dall'OS)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Totale (Max: %.2f W)"
 Metrics_PowerSparklineTitle = "Media %.2f W | %s"

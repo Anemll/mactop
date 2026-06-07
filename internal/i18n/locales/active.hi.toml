@@ -293,6 +293,8 @@ Fan_NoFansDetected = "कोई पंखा नहीं मिला"
 Fan_NoTemperatureSensorsDetected = "कोई तापमान सेंसर नहीं मिला"
 Fan_ControlActive = "[⚠ पंखा नियंत्रण सक्रिय](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) गति  [a](fg:%s,mod:bold) स्वचालित  [0/9](fg:%s,mod:bold) न्यूनतम/अधिकतम  [R](fg:green,mod:bold) रीसेट  [l](fg:%s) लेआउट  [F](fg:%s) बाहर"
 Fan_ReadOnly = "[केवल पढ़ने के लिए](fg:%s)  लिखने के लिए --fan-control उपयोग करें  |  [l](fg:%s,mod:bold) लेआउट  [F](fg:%s,mod:bold) पंखा दृश्य बंद करें"
+Fan_NeedsRoot = "[⚠ फैन नियंत्रण के लिए root आवश्यक है — पुनः चलाएँ: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ अंतिम राइट का कोई प्रभाव नहीं (OS ने अस्वीकार किया)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W कुल (अधिकतम: %.2f W)"
 Metrics_PowerSparklineTitle = "औसत %.2f W | %s"

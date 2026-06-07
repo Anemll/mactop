@@ -760,10 +760,22 @@ func buildFanTempText(themeColor string) string {
 
 // buildFanControlText renders a compact single-line status bar
 func buildFanControlText(themeColor string) string {
-	if fanControl {
-		return fmt.Sprintf(i18n.T("Fan_ControlActive"),
-			themeColor, themeColor, themeColor, themeColor, themeColor)
+	if !fanControl {
+		return fmt.Sprintf(i18n.T("Fan_ReadOnly"),
+			themeColor, themeColor, themeColor)
 	}
-	return fmt.Sprintf(i18n.T("Fan_ReadOnly"),
-		themeColor, themeColor, themeColor)
+	// SMC fan writes require root; without it every write is rejected
+	// (kIOReturnNotPrivileged), which is the most common reason fan control
+	// "has no effect". Tell the user up front rather than silently no-op'ing.
+	if !fanControlHasRoot() {
+		return i18n.T("Fan_NeedsRoot")
+	}
+	base := fmt.Sprintf(i18n.T("Fan_ControlActive"),
+		themeColor, themeColor, themeColor, themeColor, themeColor)
+	// A write was attempted but rejected (e.g. OS thermal governor on newer
+	// macOS overriding manual control). Flag it so the user knows it didn't take.
+	if fanControlWriteFailed {
+		base += i18n.T("Fan_WriteFailed")
+	}
+	return base
 }

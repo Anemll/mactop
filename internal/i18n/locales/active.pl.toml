@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Nie wykryto wentylatorów"
 Fan_NoTemperatureSensorsDetected = "Nie wykryto czujników temperatury"
 Fan_ControlActive = "[⚠ STEROWANIE WENTYLATORAMI AKTYWNE](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Prędkość  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Min/Max  [R](fg:green,mod:bold) Reset  [l](fg:%s) Układ  [F](fg:%s) Wyjście"
 Fan_ReadOnly = "[Tylko odczyt](fg:%s)  Użyj --fan-control aby włączyć zapis  |  [l](fg:%s,mod:bold) Układ  [F](fg:%s,mod:bold) Zamknij widok wentylatora"
+Fan_NeedsRoot = "[⚠ Sterowanie wentylatorami wymaga roota — uruchom ponownie: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ ostatni zapis nie przyniósł efektu (odrzucony przez system)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Razem (Maks: %.2f W)"
 Metrics_PowerSparklineTitle = "Średn %.2f W | %s"

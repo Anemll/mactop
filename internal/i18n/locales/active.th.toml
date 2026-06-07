@@ -293,6 +293,8 @@ Fan_NoFansDetected = "ไม่พบพัดลม"
 Fan_NoTemperatureSensorsDetected = "ไม่พบเซ็นเซอร์อุณหภูมิ"
 Fan_ControlActive = "[⚠ การควบคุมพัดลมทำงานอยู่](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) ความเร็ว  [a](fg:%s,mod:bold) อัตโนมัติ  [0/9](fg:%s,mod:bold) ต่ำสุด/สูงสุด  [R](fg:green,mod:bold) รีเซ็ต  [l](fg:%s) เลย์เอาท์  [F](fg:%s) ออก"
 Fan_ReadOnly = "[อ่านอย่างเดียว](fg:%s)  ใช้ --fan-control เพื่อเขียน  |  [l](fg:%s,mod:bold) เลย์เอาท์  [F](fg:%s,mod:bold) ปิดมุมมองพัดลม"
+Fan_NeedsRoot = "[⚠ การควบคุมพัดลมต้องใช้ root — เริ่มใหม่ด้วย: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ การเขียนครั้งล่าสุดไม่มีผล (ระบบปฏิเสธ)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W รวม (สูงสุด: %.2f W)"
 Metrics_PowerSparklineTitle = "เฉลี่ย %.2f W | %s"

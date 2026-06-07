@@ -293,6 +293,8 @@ Fan_NoFansDetected = "ファンが検出されませんでした"
 Fan_NoTemperatureSensorsDetected = "温度センサーが検出されませんでした"
 Fan_ControlActive = "[⚠ ファン制御有効](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 速度  [a](fg:%s,mod:bold) 自動  [0/9](fg:%s,mod:bold) 最小/最大  [R](fg:green,mod:bold) リセット  [l](fg:%s) レイアウト  [F](fg:%s) 終了"
 Fan_ReadOnly = "[読み取り専用](fg:%s)  書き込みを有効にするには --fan-control を使用  |  [l](fg:%s,mod:bold) レイアウト  [F](fg:%s,mod:bold) ファン表示を終了"
+Fan_NeedsRoot = "[⚠ ファン制御には root が必要です — 再起動: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 直近の書き込みは無効でした (OS が拒否)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 合計 (最大: %.2f W)"
 Metrics_PowerSparklineTitle = "平均 %.2f W | %s"

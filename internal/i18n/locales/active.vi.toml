@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Không phát hiện quạt"
 Fan_NoTemperatureSensorsDetected = "Không phát hiện cảm biến nhiệt"
 Fan_ControlActive = "[⚠ ĐIỀU KHIỂN QUẠT ĐANG HOẠT ĐỘNG](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Tốc độ  [a](fg:%s,mod:bold) Tự động  [0/9](fg:%s,mod:bold) Tối thiểu/Tối đa  [R](fg:green,mod:bold) Đặt lại  [l](fg:%s) Bố cục  [F](fg:%s) Thoát"
 Fan_ReadOnly = "[Chỉ đọc](fg:%s)  Dùng --fan-control để ghi  |  [l](fg:%s,mod:bold) Bố cục  [F](fg:%s,mod:bold) Đóng chế độ quạt"
+Fan_NeedsRoot = "[⚠ Điều khiển quạt cần root — khởi động lại bằng: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ lần ghi gần nhất không có tác dụng (OS từ chối)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Tổng (Tối đa: %.2f W)"
 Metrics_PowerSparklineTitle = "TB %.2f W | %s"

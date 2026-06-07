@@ -293,6 +293,8 @@ Fan_NoFansDetected = "No se detectaron ventiladores"
 Fan_NoTemperatureSensorsDetected = "No se detectaron sensores de temperatura"
 Fan_ControlActive = "[⚠ CONTROL DE VENTILADOR ACTIVO](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Velocidad  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Mín/Máx  [R](fg:green,mod:bold) Reiniciar  [l](fg:%s) Diseño  [F](fg:%s) Salir"
 Fan_ReadOnly = "[Solo lectura](fg:%s)  Usa --fan-control para habilitar escritura  |  [l](fg:%s,mod:bold) Diseño  [F](fg:%s,mod:bold) Salir de vista de ventiladores"
+Fan_NeedsRoot = "[⚠ El control de ventiladores requiere root — reinicia con: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ la última escritura no tuvo efecto (rechazada por el SO)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Total (Máx: %.2f W)"
 Metrics_PowerSparklineTitle = "Prom %.2f W | %s"

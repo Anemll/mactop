@@ -293,6 +293,8 @@ Fan_NoFansDetected = "لم يتم اكتشاف مراوح"
 Fan_NoTemperatureSensorsDetected = "لم يتم اكتشاف مستشعرات حرارة"
 Fan_ControlActive = "[⚠ التحكم بالمراوح نشط](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) السرعة  [a](fg:%s,mod:bold) تلقائي  [0/9](fg:%s,mod:bold) أدنى/أقصى  [R](fg:green,mod:bold) إعادة تعيين  [l](fg:%s) تخطيط  [F](fg:%s) خروج"
 Fan_ReadOnly = "[للقراءة فقط](fg:%s)  استخدم --fan-control للكتابة  |  [l](fg:%s,mod:bold) تخطيط  [F](fg:%s,mod:bold) إغلاق عرض المراوح"
+Fan_NeedsRoot = "[⚠ يتطلب التحكم بالمراوح صلاحيات root — أعد التشغيل بـ: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ آخر عملية كتابة لم يكن لها تأثير (رفضها النظام)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W الإجمالي (الأقصى: %.2f W)"
 Metrics_PowerSparklineTitle = "المتوسط %.2f W | %s"

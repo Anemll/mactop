@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Geen ventilatoren gedetecteerd"
 Fan_NoTemperatureSensorsDetected = "Geen temperatuursensoren gedetecteerd"
 Fan_ControlActive = "[⚠ VENTILATORREGELING ACTIEF](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Snelheid  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Min/Max  [R](fg:green,mod:bold) Reset  [l](fg:%s) Layout  [F](fg:%s) Sluiten"
 Fan_ReadOnly = "[Alleen-lezen](fg:%s)  Gebruik --fan-control om schrijven in te schakelen  |  [l](fg:%s,mod:bold) Layout  [F](fg:%s,mod:bold) Ventilatorweergave sluiten"
+Fan_NeedsRoot = "[⚠ Ventilatorbeheer vereist root — herstart met: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ laatste schrijfopdracht had geen effect (door OS geweigerd)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Totaal (Max: %.2f W)"
 Metrics_PowerSparklineTitle = "Gem %.2f W | %s"

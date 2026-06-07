@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Tidak ada kipas terdeteksi"
 Fan_NoTemperatureSensorsDetected = "Tidak ada sensor suhu terdeteksi"
 Fan_ControlActive = "[⚠ KONTROL KIPAS AKTIF](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Kecepatan  [a](fg:%s,mod:bold) Otomatis  [0/9](fg:%s,mod:bold) Min/Maks  [R](fg:green,mod:bold) Reset  [l](fg:%s) Tata Letak  [F](fg:%s) Keluar"
 Fan_ReadOnly = "[Hanya baca](fg:%s)  Gunakan --fan-control untuk menulis  |  [l](fg:%s,mod:bold) Tata Letak  [F](fg:%s,mod:bold) Tutup tampilan kipas"
+Fan_NeedsRoot = "[⚠ Kontrol kipas perlu root — jalankan ulang: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ penulisan terakhir tidak berpengaruh (ditolak OS)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Total (Maks: %.2f W)"
 Metrics_PowerSparklineTitle = "Rata-rata %.2f W | %s"

@@ -294,6 +294,8 @@ Fan_NoFansDetected = "未检测到风扇"
 Fan_NoTemperatureSensorsDetected = "未检测到温度传感器"
 Fan_ControlActive = "[⚠ 风扇控制已启用](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 速度  [a](fg:%s,mod:bold) 自动  [0/9](fg:%s,mod:bold) 最小/最大  [R](fg:green,mod:bold) 重置  [l](fg:%s) 布局  [F](fg:%s) 退出"
 Fan_ReadOnly = "[只读](fg:%s)  使用 --fan-control 启用写入  |  [l](fg:%s,mod:bold) 布局  [F](fg:%s,mod:bold) 退出风扇视图"
+Fan_NeedsRoot = "[⚠ 风扇控制需要 root — 重新运行: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 上次写入未生效 (被系统拒绝)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 总计 (最大: %.2f W)"
 Metrics_PowerSparklineTitle = "平均 %.2f W | %s"

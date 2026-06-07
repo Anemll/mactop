@@ -155,7 +155,7 @@ mactop --headless --format toon
 - `--unit-disk`: Disk unit: auto, byte, kb, mb, gb (default: auto)
 - `--unit-temp`: Temperature unit: celsius, fahrenheit (default: celsius)
 - `--lang`: Language override (e.g., `en`, `es`, `ja`, `zh`). Auto-detects system language if not set. Priority: CLI flag > `MACTOP_LANG` env var > `config.json` > system language.
-- `--fan-control`: Enable interactive fan speed control (**⚠️ writes to SMC** — use with caution, may require sudo on some macOS versions)
+- `--fan-control`: Enable interactive fan speed control (**⚠️ writes to SMC** — use with caution). **Requires root**: writing SMC fan keys is privileged, so you must run `sudo mactop --fan-control`. Without root every fan write is silently rejected (`kIOReturnNotPrivileged`) and the controls appear to do nothing.
 - `--menubar`: Run as a macOS menu bar status item alongside the TUI.
 - `--overlay`: Run as a floating overlay HUD window with FPS metrics. (**Requires Screen Recording permission** — see [Permissions](#permissions) below)
 - `--dump-fps`: Diagnostic tool that dumps display info, screen recording permission status, and tests CGDisplayStream at multiple output sizes. Useful for troubleshooting FPS display issues.
@@ -341,7 +341,11 @@ Use the following keys to interact with the application while its running:
 - `Enter` or `Space`: Sort by the selected column.
 - `h` or `?`: Toggle the help menu.
 
-### Fan Control Keys (requires `--fan-control` flag, only active in Fan layout)
+### Fan Control Keys (requires `--fan-control` flag + `sudo`, only active in Fan layout)
+
+> Fan control writes to the SMC, which is privileged — run with `sudo mactop --fan-control`.
+> Without root the keys below have no effect (mactop will show a warning in the Fan panel).
+> Note: on recent macOS the system thermal governor may also override manual fan targets.
 
 - `+` or `=`: Increase fan speed (+100 RPM)
 - `-`: Decrease fan speed (-100 RPM)

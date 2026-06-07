@@ -293,6 +293,8 @@ Fan_NoFansDetected = "Вентиляторы не обнаружены"
 Fan_NoTemperatureSensorsDetected = "Датчики температуры не обнаружены"
 Fan_ControlActive = "[⚠ УПРАВЛЕНИЕ ВЕНТИЛЯТОРАМИ АКТИВНО](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Скорость  [a](fg:%s,mod:bold) Авто  [0/9](fg:%s,mod:bold) Мин/Макс  [R](fg:green,mod:bold) Сброс  [l](fg:%s) Макет  [F](fg:%s) Выход"
 Fan_ReadOnly = "[Только чтение](fg:%s)  Используйте --fan-control для записи  |  [l](fg:%s,mod:bold) Макет  [F](fg:%s,mod:bold) Закрыть вентиляторы"
+Fan_NeedsRoot = "[⚠ Управление вентиляторами требует root — перезапустите: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ последняя запись не подействовала (отклонена ОС)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Всего (Макс: %.2f W)"
 Metrics_PowerSparklineTitle = "Средн %.2f W | %s"
