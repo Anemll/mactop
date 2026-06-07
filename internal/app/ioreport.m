@@ -1784,6 +1784,12 @@ static int readFanInfo(fan_info_t *fans, int maxFans) {
 }
 
 // Fan control functions
+//
+// setFanForceTest writes the Intel-era "Ftst" (force test) key. This key does
+// NOT exist on Apple Silicon (verified on M1/M3: the SMC exposes F<n>Md / F<n>Tg
+// but no Ftst), so this call fails there and callers must treat it as
+// best-effort — the actual manual control on Apple Silicon is F<n>Md=1 plus
+// F<n>Tg=<rpm>. It is still attempted for Intel Macs where it helps.
 int setFanForceTest(int enabled) {
   if (!g_smcConn)
     return -1;

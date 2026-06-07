@@ -123,7 +123,7 @@ func handleFanSpeedAdjust(key string) {
 		}
 	}
 	for _, fan := range lastCPUMetrics.Fans {
-		rec(SetFanForceTest(true))
+		_ = SetFanForceTest(true)  // best-effort: Ftst is absent on Apple Silicon
 		rec(SetFanMode(fan.ID, 1)) // forced mode
 
 		// Use pending target if available, otherwise fall back to last known
@@ -180,13 +180,13 @@ func handleFanAutoToggle() {
 		for _, fan := range lastCPUMetrics.Fans {
 			rec(SetFanMode(fan.ID, 0))
 		}
-		rec(SetFanForceTest(false))
+		_ = SetFanForceTest(false) // best-effort: Ftst is absent on Apple Silicon
 		for k := range pendingFanTargets {
 			delete(pendingFanTargets, k)
 		}
 	} else {
 		// All fans are auto → set ALL to manual
-		rec(SetFanForceTest(true))
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
 		for _, fan := range lastCPUMetrics.Fans {
 			rec(SetFanMode(fan.ID, 1))
 		}
@@ -208,7 +208,7 @@ func handleFanSetMin() {
 		}
 	}
 	for _, fan := range lastCPUMetrics.Fans {
-		rec(SetFanForceTest(true))
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
 		rec(SetFanMode(fan.ID, 1))
 		rec(SetFanTarget(fan.ID, fan.MinRPM))
 		pendingFanTargets[fan.ID] = fan.MinRPM
@@ -230,7 +230,7 @@ func handleFanSetMax() {
 		}
 	}
 	for _, fan := range lastCPUMetrics.Fans {
-		rec(SetFanForceTest(true))
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
 		rec(SetFanMode(fan.ID, 1))
 		rec(SetFanTarget(fan.ID, fan.MaxRPM))
 		pendingFanTargets[fan.ID] = fan.MaxRPM
