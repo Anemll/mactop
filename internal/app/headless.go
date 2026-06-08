@@ -379,12 +379,15 @@ func processHeadlessSample(format string, tbInfo *ThunderboltOutput, sysInfo Sys
 		var batPresent, batPercent, batCharging, batState string
 		if output.Battery != nil {
 			batPresent = "true"
-			batPercent = fmt.Sprintf("%d", output.Battery.Percent)
+			// Percent is empty (not -1) when the charge is unavailable, so a
+			// present battery is never misread as 0% or as absent.
+			if output.Battery.Percent != nil {
+				batPercent = fmt.Sprintf("%d", *output.Battery.Percent)
+			}
 			batCharging = fmt.Sprintf("%t", output.Battery.Charging)
 			batState = output.Battery.State
 		} else {
 			batPresent = "false"
-			batPercent = "-1"
 			batCharging = "false"
 		}
 		record = append(record, batPresent, batPercent, batCharging, batState)
@@ -564,10 +567,11 @@ func collectHeadlessData(tbInfo *ThunderboltOutput, sysInfo SystemInfo) Headless
 		Fans:                  headlessFans,
 		Temperatures:          orderedTemps,
 	}
-	// Gate on Displayable (not just Present) so headless JSON/CSV never emit a
-	// bogus -1% charge when IOKit capacity keys are missing — matching the TUI,
-	// info panel, and Prometheus, which all skip undisplayable readings.
-	if bat := GetBatteryInfo(); bat.Displayable() {
+	// Report the battery whenever the hardware is present, so consumers can tell
+	// a battery-less Mac (Studio/mini) apart from a laptop. When the charge is
+	// momentarily unreadable, Percent is nil and is simply omitted (never a
+	// bogus -1) — presence and charge are reported independently.
+	if bat := GetBatteryInfo(); bat.Present {
 		output.Battery = &bat
 	}
 	if sysInfo.ECoreCount > 0 {

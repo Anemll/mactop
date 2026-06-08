@@ -257,7 +257,7 @@ func publishPrometheusMetrics(snapshot prometheusMetricsSnapshot) {
 	// battery and when one is present but its capacity is unreadable (Percent
 	// would otherwise be a bogus -1 charge level).
 	if bat := GetBatteryInfo(); bat.Displayable() {
-		batteryPercent.Set(float64(bat.Percent))
+		batteryPercent.Set(float64(*bat.Percent))
 		if bat.Charging {
 			batteryCharging.Set(1)
 		} else {

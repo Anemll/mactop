@@ -751,27 +751,28 @@ static void ensurePMPDramChannels(void) {
   if (g_pmp_channels_attempted || g_channels == NULL)
     return;
 
-  g_pmp_channels_attempted = 1;
   CFDictionaryRef pmpChan =
       IOReportCopyChannelsInGroup(CFSTR("PMP"), NULL, 0, 0, 0);
-  if (pmpChan == NULL)
+  if (pmpChan == NULL) {
+    // No PMP group exists on this machine — permanent, mark attempted so we
+    // don't probe every sample.
+    g_pmp_channels_attempted = 1;
     return;
+  }
 
-  // Merge into a COPY rather than mutating g_channels in place. If creating
-  // the new subscription fails, g_channels and g_subscription must stay
-  // consistent (both pre-PMP) — otherwise IOReportCreateSamples would run a
-  // subscription that doesn't cover the merged channel set, and PMP DRAM
-  // fallback data would never arrive. Only swap both in together on success.
+  // Merge into a COPY; only publish it once the new subscription succeeds, so
+  // g_channels and g_subscription always stay a consistent pair — otherwise
+  // IOReportCreateSamples would run a subscription that doesn't cover the
+  // merged channel set and PMP DRAM fallback data would never arrive.
   //
-  // Safe to release the old subscription here: ensurePMPDramChannels runs at
-  // most once (guarded by g_pmp_channels_attempted) and, on the fallback path,
-  // strictly before startBgCalibrationOnce() spawns the calibration thread, so
-  // nothing else is touching g_subscription at swap time.
+  // Transient failures below (allocation, subscription) deliberately leave
+  // g_pmp_channels_attempted unset so a later sample can retry: a one-off
+  // failure must not permanently disable PMP fallback for the whole process.
   CFMutableDictionaryRef merged =
       CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, g_channels);
   if (merged == NULL) {
     CFRelease(pmpChan);
-    return;
+    return; // transient allocation failure — retry on a later sample
   }
   IOReportMergeChannels((CFDictionaryRef)merged, pmpChan, NULL);
   CFRelease(pmpChan);
@@ -780,15 +781,18 @@ static void ensurePMPDramChannels(void) {
   IOReportSubscriptionRef newSub =
       IOReportCreateSubscription(NULL, merged, &subsystem, 0, NULL);
   if (newSub == NULL) {
-    CFRelease(merged); // keep the working pre-PMP channels/subscription
+    CFRelease(merged); // transient — retry on a later sample
     return;
   }
 
-  if (g_subscription != NULL)
-    CFRelease(g_subscription);
-  CFRelease(g_channels);
+  // Publish the merged pair. We deliberately do NOT CFRelease the previous
+  // g_subscription/g_channels: the background calibration thread reads both
+  // globals without locking, so freeing them here would risk a use-after-free.
+  // This swap succeeds at most once per process (flag set below), so the
+  // leaked pre-PMP subscription/channel dict is a one-time, negligible cost.
   g_channels = merged;
   g_subscription = newSub;
+  g_pmp_channels_attempted = 1;
 }
 
 // Run auto-calibration when power-based DRAM BW is needed.

@@ -99,7 +99,7 @@ func buildInfoLines(themeColor string) []string {
 	}
 
 	if bat := GetBatteryInfo(); bat.Displayable() {
-		infoLines = append(infoLines, formatLine(i18n.T("Info_Battery"), fmt.Sprintf(i18n.T("Info_BatteryValue"), bat.Percent, batteryStateLabel(bat))))
+		infoLines = append(infoLines, formatLine(i18n.T("Info_Battery"), fmt.Sprintf(i18n.T("Info_BatteryValue"), *bat.Percent, batteryStateLabel(bat))))
 	}
 
 	// Fan section

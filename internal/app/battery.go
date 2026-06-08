@@ -73,9 +73,15 @@ import (
 )
 
 // BatteryInfo describes the current internal battery state.
+//
+// Present reports whether the host actually has an internal battery. Percent is
+// a pointer so we can distinguish "no charge reading available" (nil — e.g. a
+// battery is present but IOKit's capacity keys are momentarily missing) from a
+// real 0%. Consumers should treat a nil/omitted Percent as "charge unknown",
+// not as "no battery" (use Present for that).
 type BatteryInfo struct {
 	Present   bool   `json:"present" yaml:"present" xml:"Present" toon:"present"`
-	Percent   int    `json:"percent" yaml:"percent" xml:"Percent" toon:"percent"`
+	Percent   *int   `json:"percent,omitempty" yaml:"percent,omitempty" xml:"Percent,omitempty" toon:"percent"`
 	Charging  bool   `json:"charging" yaml:"charging" xml:"Charging" toon:"charging"`
 	OnACPower bool   `json:"on_ac_power" yaml:"on_ac_power" xml:"OnACPower" toon:"on_ac_power"`
 	State     string `json:"state" yaml:"state" xml:"State" toon:"state"`
@@ -96,13 +102,19 @@ func GetBatteryInfo() BatteryInfo {
 		return BatteryInfo{}
 	}
 	state := C.GoString(&stateBuf[0])
-	return BatteryInfo{
+	info := BatteryInfo{
 		Present:   true,
-		Percent:   int(percent),
 		Charging:  charging == 1,
 		OnACPower: strings.EqualFold(state, "AC Power"),
 		State:     state,
 	}
+	// The C layer leaves percent at -1 when IOKit capacity keys are missing.
+	// Only attach a charge value when it's a real 0–100 reading; otherwise
+	// leave Percent nil ("charge unknown") so it's never shown as -1.
+	if p := int(percent); p >= 0 && p <= 100 {
+		info.Percent = &p
+	}
+	return info
 }
 
 // HasBattery reports whether the host has an internal battery (MacBook/laptop).
@@ -120,7 +132,7 @@ func HasBattery() bool {
 // reading must not be rendered as a negative charge level, exported to
 // Prometheus, or shown in the info panel (issue: battery shows -1%).
 func (b BatteryInfo) Displayable() bool {
-	return b.Present && b.Percent >= 0 && b.Percent <= 100
+	return b.Present && b.Percent != nil
 }
 
 // batteryStateLabel returns the localized state string for a battery.
@@ -141,7 +153,7 @@ func formatBatteryLine() string {
 	if !bat.Displayable() {
 		return ""
 	}
-	return fmt.Sprintf("%s: %d%% (%s)", i18n.T("Info_Battery"), bat.Percent, batteryStateLabel(bat))
+	return fmt.Sprintf("%s: %d%% (%s)", i18n.T("Info_Battery"), *bat.Percent, batteryStateLabel(bat))
 }
 
 // avoid "imported and not used" if a future build prunes battery usage
