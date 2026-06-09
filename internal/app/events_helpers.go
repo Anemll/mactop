@@ -1,8 +1,33 @@
 package app
 
 import (
+	"os"
+
 	ui "github.com/metaspartan/gotui/v5"
 )
+
+// fanControlWriteFailed records whether the most recent fan-control SMC write
+// failed (or had no effect). SMC fan writes require root — without sudo every
+// write returns kIOReturnNotPrivileged — and newer macOS can also reject them.
+// Surfacing this lets the UI explain why fan control "does nothing" instead of
+// silently swallowing the error.
+var fanControlWriteFailed bool
+
+// fanControlHasRoot reports whether mactop is running with the privileges
+// required to write SMC fan keys.
+func fanControlHasRoot() bool { return os.Geteuid() == 0 }
+
+// noteFanWrites records the outcome of a batch of fan-control writes: failed if
+// any returned an error.
+func noteFanWrites(errs ...error) {
+	for _, e := range errs {
+		if e != nil {
+			fanControlWriteFailed = true
+			return
+		}
+	}
+	fanControlWriteFailed = false
+}
 
 func toggleInfoLayout() {
 	renderMutex.Lock()
@@ -91,9 +116,15 @@ func handleFanSpeedAdjust(key string) {
 		return
 	}
 
+	var firstErr error
+	rec := func(e error) {
+		if e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
 	for _, fan := range lastCPUMetrics.Fans {
-		_ = SetFanForceTest(true)
-		_ = SetFanMode(fan.ID, 1) // forced mode
+		_ = SetFanForceTest(true)  // best-effort: Ftst is absent on Apple Silicon
+		rec(SetFanMode(fan.ID, 1)) // forced mode
 
 		// Use pending target if available, otherwise fall back to last known
 		baseline, ok := pendingFanTargets[fan.ID]
@@ -113,8 +144,9 @@ func handleFanSpeedAdjust(key string) {
 			baseline = fan.MaxRPM
 		}
 		pendingFanTargets[fan.ID] = baseline
-		_ = SetFanTarget(fan.ID, baseline)
+		rec(SetFanTarget(fan.ID, baseline))
 	}
+	noteFanWrites(firstErr)
 	updateInfoUI()
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
@@ -137,22 +169,29 @@ func handleFanAutoToggle() {
 		}
 	}
 
+	var firstErr error
+	rec := func(e error) {
+		if e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
 	if anyManual {
 		// Any fan is manual → set ALL to auto
 		for _, fan := range lastCPUMetrics.Fans {
-			_ = SetFanMode(fan.ID, 0)
+			rec(SetFanMode(fan.ID, 0))
 		}
-		_ = SetFanForceTest(false)
+		_ = SetFanForceTest(false) // best-effort: Ftst is absent on Apple Silicon
 		for k := range pendingFanTargets {
 			delete(pendingFanTargets, k)
 		}
 	} else {
 		// All fans are auto → set ALL to manual
-		_ = SetFanForceTest(true)
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
 		for _, fan := range lastCPUMetrics.Fans {
-			_ = SetFanMode(fan.ID, 1)
+			rec(SetFanMode(fan.ID, 1))
 		}
 	}
+	noteFanWrites(firstErr)
 	updateInfoUI()
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
@@ -162,12 +201,19 @@ func handleFanSetMin() {
 	renderMutex.Lock()
 	defer renderMutex.Unlock()
 
+	var firstErr error
+	rec := func(e error) {
+		if e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
 	for _, fan := range lastCPUMetrics.Fans {
-		_ = SetFanForceTest(true)
-		_ = SetFanMode(fan.ID, 1)
-		_ = SetFanTarget(fan.ID, fan.MinRPM)
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
+		rec(SetFanMode(fan.ID, 1))
+		rec(SetFanTarget(fan.ID, fan.MinRPM))
 		pendingFanTargets[fan.ID] = fan.MinRPM
 	}
+	noteFanWrites(firstErr)
 	updateInfoUI()
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
@@ -177,12 +223,19 @@ func handleFanSetMax() {
 	renderMutex.Lock()
 	defer renderMutex.Unlock()
 
+	var firstErr error
+	rec := func(e error) {
+		if e != nil && firstErr == nil {
+			firstErr = e
+		}
+	}
 	for _, fan := range lastCPUMetrics.Fans {
-		_ = SetFanForceTest(true)
-		_ = SetFanMode(fan.ID, 1)
-		_ = SetFanTarget(fan.ID, fan.MaxRPM)
+		_ = SetFanForceTest(true) // best-effort: Ftst is absent on Apple Silicon
+		rec(SetFanMode(fan.ID, 1))
+		rec(SetFanTarget(fan.ID, fan.MaxRPM))
 		pendingFanTargets[fan.ID] = fan.MaxRPM
 	}
+	noteFanWrites(firstErr)
 	updateInfoUI()
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
@@ -192,7 +245,7 @@ func handleFanResetAuto() {
 	renderMutex.Lock()
 	defer renderMutex.Unlock()
 
-	_ = ResetFansToAuto()
+	noteFanWrites(ResetFansToAuto())
 	for k := range pendingFanTargets {
 		delete(pendingFanTargets, k)
 	}
@@ -201,11 +254,11 @@ func handleFanResetAuto() {
 	drawScreen(w, h)
 }
 
-func handleThemeCycle() {
+func handleThemeCycle(step int) {
 	renderMutex.Lock()
 	w, h := ui.TerminalDimensions()
 	updateLayout(w, h)
-	cycleTheme()
+	cycleTheme(step)
 	renderMutex.Unlock()
 	renderMutex.Lock()
 	updateProcessList()
@@ -214,9 +267,9 @@ func handleThemeCycle() {
 	renderMutex.Unlock()
 }
 
-func handleLayoutCycle() {
+func handleLayoutCycle(step int) {
 	renderMutex.Lock()
-	cycleLayout()
+	cycleLayout(step)
 	renderMutex.Unlock()
 	saveConfig()
 	renderMutex.Lock()
@@ -225,9 +278,9 @@ func handleLayoutCycle() {
 	renderMutex.Unlock()
 }
 
-func handleBackgroundCycle() {
+func handleBackgroundCycle(step int) {
 	renderMutex.Lock()
-	cycleBackground()
+	cycleBackground(step)
 	w, h := ui.TerminalDimensions()
 	drawScreen(w, h)
 	renderMutex.Unlock()

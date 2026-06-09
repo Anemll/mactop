@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "频率: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "正常"
+Metrics_ThermalModerate = "中等"
+Metrics_ThermalHeavy = "偏高"
+Metrics_ThermalTrapping = "严重"
+Metrics_ThermalSleeping = "休眠"
 Metrics_ThermalFair = "尚可"
 Metrics_ThermalSerious = "严重"
 Metrics_ThermalCritical = "危险"
@@ -143,10 +147,10 @@ Prometheus 指标: %s
 
 ----操作控制----
 - r: 手动刷新 UI 数据
-- c: 切换 UI 颜色主题
-- b: 切换 UI 背景色
+- c / Shift + C: 切换 UI 颜色主题 正向 / 反向
+- b / Shift + B: 切换 UI 背景色 正向 / 反向
 - p: 开启/关闭派对模式 (色彩循环)
-- l: 在 18 种可用布局中切换
+- l / Shift + L: 在 19 种可用布局中切换 正向 / 反向
 - i: 切换信息面板布局
 - Shift + F: 切换风扇控制与散热状态面板
 - F9: 结束选中的进程 (需要 y/n 确认)
@@ -177,7 +181,7 @@ Prometheus 指标: %s
 --fan-control: 启用交互式风扇控制 (修改 SMC 状态)*
 --menubar: 作为 macOS 菜单栏组件运行 (无 TUI 终端界面)
 
-自定义主题: 请创建 ~/.mactop/theme.json 配置文件进行自定义着色
+自定义主题：请在 $XDG_CONFIG_HOME/mactop 或 ~/.mactop 中创建 theme.json 配置文件进行自定义着色
 """
 
 Info_Auto = "自动"
@@ -247,7 +251,7 @@ CLI_HelpText = """
       --dump-debug        诊断：输出 IOReport/HID/SMC/NVMe 调试信息并退出
 
 主题文件:
-  创建 ~/.mactop/theme.json 以使用自定义十六进制颜色:
+  在 $XDG_CONFIG_HOME/mactop 或 ~/.mactop 中创建 theme.json 以使用自定义十六进制颜色:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 更多信息: https://github.com/metaspartan/mactop （Carsen Klock）
@@ -290,6 +294,8 @@ Fan_NoFansDetected = "未检测到风扇"
 Fan_NoTemperatureSensorsDetected = "未检测到温度传感器"
 Fan_ControlActive = "[⚠ 风扇控制已启用](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 速度  [a](fg:%s,mod:bold) 自动  [0/9](fg:%s,mod:bold) 最小/最大  [R](fg:green,mod:bold) 重置  [l](fg:%s) 布局  [F](fg:%s) 退出"
 Fan_ReadOnly = "[只读](fg:%s)  使用 --fan-control 启用写入  |  [l](fg:%s,mod:bold) 布局  [F](fg:%s,mod:bold) 退出风扇视图"
+Fan_NeedsRoot = "[⚠ 风扇控制需要 root — 重新运行: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 上次写入未生效 (被系统拒绝)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 总计 (最大: %.2f W)"
 Metrics_PowerSparklineTitle = "平均 %.2f W | %s"
@@ -356,3 +362,12 @@ TempCategory_Thunderbolt = "雷电"
 TempCategory_Wireless = "无线"
 TempCategory_Display = "显示"
 TempCategory_Other = "其他"
+
+Info_Battery = "电池"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "充电中"
+Info_BatteryDischarging = "使用电池"
+Info_BatteryAC = "交流电"
+
+TUI_MemoryBandwidthHistory = "内存带宽历史"
+Metrics_MemBWHistoryDetail = "DRAM 带宽: %.1f GB/s"

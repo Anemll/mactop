@@ -437,5 +437,39 @@ func GetThunderboltDescription() string {
 		}
 	}
 
+	// Apple Silicon Macs connected via Thunderbolt do not register as
+	// IOThunderboltSwitch children on the local side — they only surface as
+	// Thunderbolt Bridge (bridge0) member interfaces. List those so a
+	// peer-host TB5 connection (e.g. used for RDMA) is visible alongside the
+	// devices enumerated by IOKit.
+	bridgePeers := listThunderboltBridgePeers()
+	if len(bridgePeers) > 0 {
+		sb.WriteString("Thunderbolt Bridge:\n")
+		for i, iface := range bridgePeers {
+			prefix := "  ├─"
+			if i == len(bridgePeers)-1 {
+				prefix = "  └─"
+			}
+			fmt.Fprintf(&sb, "%s %s (peer host)\n", prefix, iface)
+		}
+	}
+
 	return strings.TrimSpace(sb.String())
+}
+
+// listThunderboltBridgePeers returns the bridge member interface names
+// (en2, en3, ...) that indicate a Thunderbolt Bridge link to a peer host.
+// Excludes "bridge0" itself.
+func listThunderboltBridgePeers() []string {
+	members := getTBBridgeMembers()
+	var ifaces []string
+	for name := range members {
+		if name == "bridge0" {
+			continue
+		}
+		if strings.HasPrefix(name, "en") {
+			ifaces = append(ifaces, name)
+		}
+	}
+	return ifaces
 }

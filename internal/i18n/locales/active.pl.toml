@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Częstotliwość: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Normalny"
+Metrics_ThermalModerate = "Umiarkowane"
+Metrics_ThermalHeavy = "Wysokie"
+Metrics_ThermalTrapping = "Krytyczne"
+Metrics_ThermalSleeping = "Uśpienie"
 Metrics_ThermalFair = "Umiarkowany"
 Metrics_ThermalSerious = "Poważny"
 Metrics_ThermalCritical = "Krytyczny"
@@ -142,10 +146,10 @@ Interwał odświeżania: %dms
 
 ----Sterowanie----
 - r: Ręczne odświeżenie danych UI
-- c: Zmień motyw kolorów
-- b: Zmień kolor tła
+- c / Shift + C: Zmień motyw kolorów w przód / w tył
+- b / Shift + B: Zmień kolor tła w przód / w tył
 - p: Tryb imprezowy (cykl kolorów)
-- l: Przełączaj między 18 układami
+- l / Shift + L: Przełączaj między 19 układami w przód / w tył
 - i: Pokaż/ukryj panel informacyjny
 - Shift + F: Sterowanie wentylatorami i panel termiczny
 - F9: Zakończ wybrany proces (t/n)
@@ -176,7 +180,7 @@ Interwał odświeżania: %dms
 --fan-control: Interaktywne sterowanie wentylatorami (SMC)*
 --menubar: Tryb paska menu macOS
 
-Plik motywu: Utwórz ~/.mactop/theme.json dla niestandardowych kolorów.
+Plik motywu: utwórz theme.json w $XDG_CONFIG_HOME/mactop lub ~/.mactop dla niestandardowych kolorów.
 """
 
 Info_Auto = "Automatyczny"
@@ -246,7 +250,7 @@ Opcje:
       --dump-debug        Diagnostyka: pokaż informacje debugowania IOReport/HID/SMC/NVMe i zakończ
 
 Plik motywu:
-  Utwórz ~/.mactop/theme.json z niestandardowymi kolorami hex:
+  Utwórz theme.json w $XDG_CONFIG_HOME/mactop lub ~/.mactop z niestandardowymi kolorami hex:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 Więcej informacji: https://github.com/metaspartan/mactop autorstwa Carsen Klock.
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "Nie wykryto wentylatorów"
 Fan_NoTemperatureSensorsDetected = "Nie wykryto czujników temperatury"
 Fan_ControlActive = "[⚠ STEROWANIE WENTYLATORAMI AKTYWNE](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Prędkość  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Min/Max  [R](fg:green,mod:bold) Reset  [l](fg:%s) Układ  [F](fg:%s) Wyjście"
 Fan_ReadOnly = "[Tylko odczyt](fg:%s)  Użyj --fan-control aby włączyć zapis  |  [l](fg:%s,mod:bold) Układ  [F](fg:%s,mod:bold) Zamknij widok wentylatora"
+Fan_NeedsRoot = "[⚠ Sterowanie wentylatorami wymaga roota — uruchom ponownie: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ ostatni zapis nie przyniósł efektu (odrzucony przez system)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Razem (Maks: %.2f W)"
 Metrics_PowerSparklineTitle = "Średn %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Bezprzewodowy"
 TempCategory_Display = "Ekran"
 TempCategory_Other = "Inne"
+
+Info_Battery = "Bateria"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "ładowanie"
+Info_BatteryDischarging = "na baterii"
+Info_BatteryAC = "zasilanie sieciowe"
+
+TUI_MemoryBandwidthHistory = "Historia przepustowości pamięci"
+Metrics_MemBWHistoryDetail = "Przepustowość DRAM: %.1f GB/s"

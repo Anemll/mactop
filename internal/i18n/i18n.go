@@ -38,6 +38,15 @@ func Init(langOverride string) {
 	var langs []string
 
 	if langOverride != "" {
+		// Normalize explicit overrides (--lang, MACTOP_LANG, config.json) the
+		// same way auto-detection does, so locales like zh-TW / zh-Hant-TW /
+		// zh_TW.UTF-8 resolve to the shipped zh-Hant catalog and en-US -> en.
+		// The normalized tag goes first; the raw override is kept as a
+		// secondary preference in case a future catalog ships a more specific
+		// tag than the normalized primary subtag.
+		if tag := normalizeLanguageTag(langOverride); tag != "" && tag != langOverride {
+			langs = append(langs, tag)
+		}
 		langs = append(langs, langOverride)
 	} else {
 		sysLang := detectSystemLanguage()
@@ -84,50 +93,50 @@ func TData(id string, templateData map[string]any) string {
 
 // detectSystemLanguage attempts to read the macOS system language.
 func detectSystemLanguage() string {
-	// First try macOS defaults command
-	cmd := exec.Command("defaults", "read", "-g", "AppleLanguages")
-	out, err := cmd.Output()
-	if err == nil {
-		// Output looks like:
-		// (
-		//     "en-US",
-		//     "es-US"
-		// )
-		lines := strings.SplitSeq(string(out), "\n")
-		for line := range lines {
+	if out, err := exec.Command("defaults", "read", "-g", "AppleLanguages").Output(); err == nil {
+		for line := range strings.SplitSeq(string(out), "\n") {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "\"") && strings.HasSuffix(line, "\",") {
-				lang := strings.Trim(line, "\",")
-				// Convert en-US to en, es-US to es
-				parts := strings.Split(lang, "-")
-				if len(parts) > 0 {
-					return parts[0]
-				}
-				return lang
-			} else if strings.HasPrefix(line, "\"") && strings.HasSuffix(line, "\"") {
-				lang := strings.Trim(line, "\"")
-				parts := strings.Split(lang, "-")
-				if len(parts) > 0 {
-					return parts[0]
-				}
-				return lang
+			if !strings.HasPrefix(line, "\"") {
+				continue
+			}
+			if tag := normalizeLanguageTag(strings.Trim(line, "\",")); tag != "" {
+				return tag
 			}
 		}
 	}
 
-	// Fallback to standard environment variables
-	if lang := os.Getenv("LC_ALL"); lang != "" {
-		parts := strings.Split(lang, "_")
-		if len(parts) > 0 {
-			return parts[0]
-		}
-	}
-	if lang := os.Getenv("LANG"); lang != "" {
-		parts := strings.Split(lang, "_")
-		if len(parts) > 0 {
-			return parts[0]
+	for _, env := range []string{"LC_ALL", "LANG"} {
+		if tag := normalizeLanguageTag(os.Getenv(env)); tag != "" {
+			return tag
 		}
 	}
 
 	return ""
+}
+
+// normalizeLanguageTag maps a raw BCP-47 or POSIX locale to a shipped tag.
+// zh-TW, zh-HK, zh-MO, and zh-Hant* return "zh-Hant"; other zh variants return
+// "zh"; otherwise the primary subtag is kept.
+func normalizeLanguageTag(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	normalized := strings.ReplaceAll(raw, "_", "-")
+	if dot := strings.Index(normalized, "."); dot != -1 {
+		normalized = normalized[:dot]
+	}
+	parts := strings.Split(strings.ToLower(normalized), "-")
+	if len(parts) == 0 || parts[0] == "" {
+		return ""
+	}
+	if parts[0] == "zh" {
+		for _, part := range parts[1:] {
+			switch part {
+			case "hant", "tw", "hk", "mo":
+				return "zh-Hant"
+			}
+		}
+		return "zh"
+	}
+	return parts[0]
 }

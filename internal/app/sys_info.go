@@ -255,34 +255,44 @@ func getGPUCores() string {
 
 type thermalStateLevel int
 
+// Thermal pressure levels mirror macOS's OSThermalPressureLevel scale, exposed
+// via the "com.apple.system.thermalpressurelevel" notification and reported by
+// `powermetrics --samplers thermal` as "Current pressure level". Using the same
+// taxonomy (rather than the coarser 4-state NSProcessInfoThermalState) lets
+// mactop's thermal reading match powermetrics exactly.
 const (
 	thermalStateUnknown  thermalStateLevel = -1
 	thermalStateNominal  thermalStateLevel = 0
-	thermalStateFair     thermalStateLevel = 1
-	thermalStateSerious  thermalStateLevel = 2
-	thermalStateCritical thermalStateLevel = 3
+	thermalStateModerate thermalStateLevel = 1
+	thermalStateHeavy    thermalStateLevel = 2
+	thermalStateTrapping thermalStateLevel = 3
+	thermalStateSleeping thermalStateLevel = 4
 )
 
+// getThermalStateLevel reports the current system thermal pressure.
+//
+// It uses NSProcessInfo.thermalState (via getSocThermalState), which is the
+// supported thermal-pressure API on Apple Silicon and matches what the OS and
+// `powermetrics --samplers thermal` report. The previous implementation read
+// the `machdep.xcpm.cpu_thermal_level` sysctl, but that OID is Intel-only
+// (xcpm = Intel power management) and does not exist on Apple Silicon — the
+// lookup always failed, pinning the reading to "Nominal" on every M-series
+// Mac regardless of actual thermal pressure (issue #71).
+//
+// NSProcessInfoThermalState values map directly onto our enum:
+// Nominal=0, Fair=1, Serious=2, Critical=3.
 func getThermalStateLevel() thermalStateLevel {
-	name := C.CString("machdep.xcpm.cpu_thermal_level")
-	defer C.free(unsafe.Pointer(name))
-
-	var val int32
-	size := C.size_t(unsafe.Sizeof(val))
-
-	if C.sysctlbyname(name, unsafe.Pointer(&val), &size, nil, 0) != 0 {
-		return thermalStateNominal
-	}
-
-	switch val {
+	switch getSocThermalState() {
 	case 0:
 		return thermalStateNominal
 	case 1:
-		return thermalStateFair
+		return thermalStateModerate
 	case 2:
-		return thermalStateSerious
+		return thermalStateHeavy
 	case 3:
-		return thermalStateCritical
+		return thermalStateTrapping
+	case 4:
+		return thermalStateSleeping
 	default:
 		return thermalStateUnknown
 	}
@@ -292,24 +302,24 @@ func thermalStateString(level thermalStateLevel) string {
 	switch level {
 	case thermalStateNominal:
 		return i18n.T("Metrics_ThermalNominal")
-	case thermalStateFair:
-		return i18n.T("Metrics_ThermalFair")
-	case thermalStateSerious:
-		return i18n.T("Metrics_ThermalSerious")
-	case thermalStateCritical:
-		return i18n.T("Metrics_ThermalCritical")
+	case thermalStateModerate:
+		return i18n.T("Metrics_ThermalModerate")
+	case thermalStateHeavy:
+		return i18n.T("Metrics_ThermalHeavy")
+	case thermalStateTrapping:
+		return i18n.T("Metrics_ThermalTrapping")
+	case thermalStateSleeping:
+		return i18n.T("Metrics_ThermalSleeping")
 	default:
 		return i18n.T("Metrics_ThermalUnknown")
 	}
 }
 
+// thermalStateThrottled reports whether the OS is applying thermal mitigation,
+// i.e. any pressure above Nominal (Moderate and up). Used to flag the CPU as
+// thermally constrained.
 func thermalStateThrottled(level thermalStateLevel) bool {
-	switch level {
-	case thermalStateFair, thermalStateSerious, thermalStateCritical:
-		return true
-	default:
-		return false
-	}
+	return level >= thermalStateModerate
 }
 
 func getThermalStateString() (string, bool) {

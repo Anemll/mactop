@@ -101,7 +101,7 @@ type MenuBarMetricsPayload struct {
 	TFLOPs         float64        `json:"tflops"`
 	CPUPercent     float64        `json:"cpu_percent"`
 	ThermalState   string         `json:"thermal_state"`
-	ThermalLevel   int            `json:"thermal_level"` // 0=nominal, 1=fair, 2=serious, 3=critical
+	ThermalLevel   int            `json:"thermal_level"` // 0=nominal, 1=moderate, 2=heavy, 3=trapping, 4=sleeping
 	RDMAStatus     string         `json:"rdma_status"`
 	TotalPower     float64        `json:"total_power"`
 }

@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Frekans: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Normal"
+Metrics_ThermalModerate = "Orta"
+Metrics_ThermalHeavy = "Yüksek"
+Metrics_ThermalTrapping = "Kritik"
+Metrics_ThermalSleeping = "Uyku"
 Metrics_ThermalFair = "Orta"
 Metrics_ThermalSerious = "Ciddi"
 Metrics_ThermalCritical = "Kritik"
@@ -142,10 +146,10 @@ Güncelleme Aralığı: %dms
 
 ----Kontroller----
 - r: UI verilerini manuel olarak yenile
-- c: UI renk temasını değiştir
-- b: UI arka plan rengini değiştir
+- c / Shift + C: UI renk temasını değiştir ileri / geri
+- b / Shift + B: UI arka plan rengini değiştir ileri / geri
 - p: Parti modunu aç/kapat (renk döngüsü)
-- l: 18 mevcut düzen arasında geçiş yap
+- l / Shift + L: 19 mevcut düzen arasında geçiş yap ileri / geri
 - i: Bilgi panelini göster/gizle
 - Shift + F: Fan kontrolü ve termal paneli
 - F9: Seçili işlemi sonlandır (e/h)
@@ -176,7 +180,7 @@ Güncelleme Aralığı: %dms
 --fan-control: Etkileşimli fan kontrolü (SMC)*
 --menubar: macOS menü çubuğu modu
 
-Tema Dosyası: Özel renkler için ~/.mactop/theme.json oluşturun.
+Tema dosyası: özel renkler için $XDG_CONFIG_HOME/mactop veya ~/.mactop içinde theme.json oluşturun.
 """
 
 Info_Auto = "Otomatik"
@@ -246,7 +250,7 @@ Seçenekler:
       --dump-debug        Tanılama: IOReport/HID/SMC/NVMe hata ayıklama bilgilerini göster ve çık
 
 Tema Dosyası:
-  Özel hex renkler için ~/.mactop/theme.json oluşturun:
+  Özel hex renkler için $XDG_CONFIG_HOME/mactop veya ~/.mactop içinde theme.json oluşturun:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 Daha fazla bilgi: https://github.com/metaspartan/mactop — Carsen Klock.
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "Fan algılanmadı"
 Fan_NoTemperatureSensorsDetected = "Sıcaklık sensörü algılanmadı"
 Fan_ControlActive = "[⚠ FAN KONTROLÜ AKTİF](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Hız  [a](fg:%s,mod:bold) Otomatik  [0/9](fg:%s,mod:bold) Min/Maks  [R](fg:green,mod:bold) Sıfırla  [l](fg:%s) Düzen  [F](fg:%s) Çıkış"
 Fan_ReadOnly = "[Salt okunur](fg:%s)  Yazmak için --fan-control kullanın  |  [l](fg:%s,mod:bold) Düzen  [F](fg:%s,mod:bold) Fan görünümünden çık"
+Fan_NeedsRoot = "[⚠ Fan denetimi root gerektirir — şununla yeniden başlatın: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ son yazma etkili olmadı (işletim sistemi reddetti)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Toplam (Maks: %.2f W)"
 Metrics_PowerSparklineTitle = "Ort %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Kablosuz"
 TempCategory_Display = "Ekran"
 TempCategory_Other = "Diğer"
+
+Info_Battery = "Pil"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "şarj oluyor"
+Info_BatteryDischarging = "pilde"
+Info_BatteryAC = "şebeke"
+
+TUI_MemoryBandwidthHistory = "Bellek Bant Genişliği Geçmişi"
+Metrics_MemBWHistoryDetail = "DRAM Bant Genişliği: %.1f GB/s"

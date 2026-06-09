@@ -57,27 +57,6 @@ func TestFormatTemp(t *testing.T) {
 	}
 }
 
-func TestMax(t *testing.T) {
-	tests := []struct {
-		name string
-		nums []int
-		want int
-	}{
-		{"Single positive", []int{5}, 5},
-		{"Multiple positive", []int{1, 5, 3}, 5},
-		{"Negative numbers", []int{-1, -5, -3}, -1},
-		{"Mixed numbers", []int{-5, 0, 5}, 5},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := max(tt.nums...); got != tt.want {
-				t.Errorf("max() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNewCPUMetrics(t *testing.T) {
 	m := NewCPUMetrics()
 	if m.CoreMetrics == nil {
@@ -88,6 +67,51 @@ func TestNewCPUMetrics(t *testing.T) {
 	}
 	if m.PCores == nil {
 		t.Error("PCores slice should be initialized")
+	}
+}
+
+func TestNormalizeSocMetricsPower(t *testing.T) {
+	withResidual := normalizeSocMetricsPower(SocMetrics{
+		TotalPower:  10,
+		SystemPower: 14,
+	})
+	if withResidual.TotalPower != 14 {
+		t.Fatalf("expected package power 14, got %.2f", withResidual.TotalPower)
+	}
+	if withResidual.SystemPower != 4 {
+		t.Fatalf("expected residual system power 4, got %.2f", withResidual.SystemPower)
+	}
+
+	componentOnly := normalizeSocMetricsPower(SocMetrics{
+		TotalPower:  10,
+		SystemPower: 7,
+	})
+	if componentOnly.TotalPower != 10 {
+		t.Fatalf("expected package power to fall back to component sum 10, got %.2f", componentOnly.TotalPower)
+	}
+	if componentOnly.SystemPower != 0 {
+		t.Fatalf("expected no residual system power, got %.2f", componentOnly.SystemPower)
+	}
+}
+
+func TestPrometheusCoreAveragesAndTypes(t *testing.T) {
+	info := SystemInfo{CoreCount: 6, ECoreCount: 2, PCoreCount: 3, SCoreCount: 1}
+	eAvg, pAvg, sAvg := calculateCoreAveragesForSystem([]float64{10, 30, 40, 50, 60, 80}, info)
+	if eAvg != 20 {
+		t.Fatalf("expected E-core average 20, got %.2f", eAvg)
+	}
+	if pAvg != 50 {
+		t.Fatalf("expected P-core average 50, got %.2f", pAvg)
+	}
+	if sAvg != 80 {
+		t.Fatalf("expected S-core average 80, got %.2f", sAvg)
+	}
+
+	expectedTypes := []string{"e", "e", "p", "p", "p", "s"}
+	for i, want := range expectedTypes {
+		if got := coreTypeForIndex(i, info); got != want {
+			t.Fatalf("core %d type = %s, want %s", i, got, want)
+		}
 	}
 }
 

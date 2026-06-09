@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Frequência: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Nominal"
+Metrics_ThermalModerate = "Moderado"
+Metrics_ThermalHeavy = "Alto"
+Metrics_ThermalTrapping = "Crítico"
+Metrics_ThermalSleeping = "Suspensão"
 Metrics_ThermalFair = "Razoável"
 Metrics_ThermalSerious = "Sério"
 Metrics_ThermalCritical = "Crítico"
@@ -142,10 +146,10 @@ Intervalo: %dms
 
 ----Controles----
 - r: Atualizar
-- c: Mudar tema
-- b: Mudar cor de fundo
+- c / Shift + C: Mudar tema para frente / para trás
+- b / Shift + B: Mudar cor de fundo para frente / para trás
 - p: Modo Festa
-- l: Alternar entre layouts
+- l / Shift + L: Alternar entre layouts para frente / para trás
 - i: Ativar as Informações
 - Shift + F: Ventiladores & Temperatura
 - F9: Matar processo (s/n)
@@ -176,7 +180,7 @@ Intervalo: %dms
 --fan-control: Controle da ventoinha (SMC)*
 --menubar: Barra de Menus macOS
 
-Crie ~/.mactop/theme.json para cores customizadas!
+Crie theme.json em $XDG_CONFIG_HOME/mactop ou ~/.mactop para cores customizadas!
 """
 
 Info_Auto = "Auto"
@@ -245,7 +249,7 @@ Opções:
       --dump-debug        Diagnóstico: despejar informação de debug IOReport/HID/SMC/NVMe e sair
 
 Ficheiro de tema:
-  Crie ~/.mactop/theme.json com cores hex personalizadas:
+  Crie theme.json em $XDG_CONFIG_HOME/mactop ou ~/.mactop com cores hex personalizadas:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 Mais informações: https://github.com/metaspartan/mactop por Carsen Klock.
@@ -288,6 +292,8 @@ Fan_NoFansDetected = "Nenhuma ventoinha detetada"
 Fan_NoTemperatureSensorsDetected = "Nenhum sensor de temperatura detetado"
 Fan_ControlActive = "[⚠ CONTROLO DE VENTOINHAS ATIVO](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Velocidade  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Mín/Máx  [R](fg:green,mod:bold) Repor  [l](fg:%s) Layout  [F](fg:%s) Sair"
 Fan_ReadOnly = "[Só leitura](fg:%s)  Use --fan-control para permitir escrita  |  [l](fg:%s,mod:bold) Layout  [F](fg:%s,mod:bold) Sair da vista das ventoinhas"
+Fan_NeedsRoot = "[⚠ O controlo de ventoinhas requer root — reinicie com: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ a última escrita não teve efeito (rejeitada pelo SO)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Total (Máx: %.2f W)"
 Metrics_PowerSparklineTitle = "Média %.2f W | %s"
@@ -354,3 +360,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Sem fio"
 TempCategory_Display = "Tela"
 TempCategory_Other = "Outro"
+
+Info_Battery = "Bateria"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "carregando"
+Info_BatteryDischarging = "na bateria"
+Info_BatteryAC = "tomada"
+
+TUI_MemoryBandwidthHistory = "Histórico de largura de banda da memória"
+Metrics_MemBWHistoryDetail = "Largura de banda DRAM: %.1f GB/s"

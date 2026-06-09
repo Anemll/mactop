@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Frekuensi: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Normal"
+Metrics_ThermalModerate = "Sedang"
+Metrics_ThermalHeavy = "Berat"
+Metrics_ThermalTrapping = "Kritis"
+Metrics_ThermalSleeping = "Tidur"
 Metrics_ThermalFair = "Sedang"
 Metrics_ThermalSerious = "Serius"
 Metrics_ThermalCritical = "Kritis"
@@ -142,10 +146,10 @@ Interval Pembaruan: %dms
 
 ----Kontrol----
 - r: Perbarui data UI secara manual
-- c: Ubah tema warna
-- b: Ubah warna latar
+- c / Shift + C: Ubah tema warna maju / mundur
+- b / Shift + B: Ubah warna latar maju / mundur
 - p: Mode pesta (siklus warna)
-- l: Beralih antara 18 tata letak
+- l / Shift + L: Beralih antara 19 tata letak maju / mundur
 - i: Tampilkan/sembunyikan panel info
 - Shift + F: Kontrol kipas dan panel termal
 - F9: Hentikan proses yang dipilih (y/t)
@@ -176,7 +180,7 @@ Interval Pembaruan: %dms
 --fan-control: Kontrol kipas interaktif (SMC)*
 --menubar: Mode bilah menu macOS
 
-Berkas Tema: Buat ~/.mactop/theme.json untuk warna kustom.
+Berkas tema: buat theme.json di $XDG_CONFIG_HOME/mactop atau ~/.mactop untuk warna kustom.
 """
 
 Info_Auto = "Otomatis"
@@ -246,7 +250,7 @@ Opsi:
       --dump-debug        Diagnostik: tampilkan info debug IOReport/HID/SMC/NVMe dan keluar
 
 Berkas Tema:
-  Buat ~/.mactop/theme.json dengan warna hex kustom:
+  Buat theme.json di $XDG_CONFIG_HOME/mactop atau ~/.mactop dengan warna hex kustom:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 Info lebih lanjut: https://github.com/metaspartan/mactop oleh Carsen Klock.
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "Tidak ada kipas terdeteksi"
 Fan_NoTemperatureSensorsDetected = "Tidak ada sensor suhu terdeteksi"
 Fan_ControlActive = "[⚠ KONTROL KIPAS AKTIF](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Kecepatan  [a](fg:%s,mod:bold) Otomatis  [0/9](fg:%s,mod:bold) Min/Maks  [R](fg:green,mod:bold) Reset  [l](fg:%s) Tata Letak  [F](fg:%s) Keluar"
 Fan_ReadOnly = "[Hanya baca](fg:%s)  Gunakan --fan-control untuk menulis  |  [l](fg:%s,mod:bold) Tata Letak  [F](fg:%s,mod:bold) Tutup tampilan kipas"
+Fan_NeedsRoot = "[⚠ Kontrol kipas perlu root — jalankan ulang: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ penulisan terakhir tidak berpengaruh (ditolak OS)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Total (Maks: %.2f W)"
 Metrics_PowerSparklineTitle = "Rata-rata %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Nirkabel"
 TempCategory_Display = "Layar"
 TempCategory_Other = "Lainnya"
+
+Info_Battery = "Baterai"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "mengisi daya"
+Info_BatteryDischarging = "pakai baterai"
+Info_BatteryAC = "AC"
+
+TUI_MemoryBandwidthHistory = "Riwayat Bandwidth Memori"
+Metrics_MemBWHistoryDetail = "Bandwidth DRAM: %.1f GB/s"

@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "التردد: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "طبيعي"
+Metrics_ThermalModerate = "معتدل"
+Metrics_ThermalHeavy = "مرتفع"
+Metrics_ThermalTrapping = "حرج"
+Metrics_ThermalSleeping = "سكون"
 Metrics_ThermalFair = "مقبول"
 Metrics_ThermalSerious = "خطير"
 Metrics_ThermalCritical = "حرج"
@@ -142,10 +146,10 @@ mactop أداة مراقبة مفتوحة المصدر لـ Apple Silicon كتب
 
 ----التحكم----
 - r: تحديث بيانات واجهة المستخدم يدويًا
-- c: تغيير سمة الألوان
-- b: تغيير لون الخلفية
+- c / Shift + C: تغيير سمة الألوان للأمام / للخلف
+- b / Shift + B: تغيير لون الخلفية للأمام / للخلف
 - p: وضع الحفلة (دورة الألوان)
-- l: التنقل بين 18 تخطيطًا
+- l / Shift + L: التنقل بين 19 تخطيطًا للأمام / للخلف
 - i: إظهار/إخفاء لوحة المعلومات
 - Shift + F: التحكم بالمراوح واللوحة الحرارية
 - F9: إنهاء العملية المحددة (ن/ل)
@@ -176,7 +180,7 @@ mactop أداة مراقبة مفتوحة المصدر لـ Apple Silicon كتب
 --fan-control: تحكم تفاعلي بالمراوح (SMC)*
 --menubar: وضع شريط قوائم macOS
 
-ملف السمة: أنشئ ~/.mactop/theme.json لألوان مخصصة.
+ملف السمة: أنشئ theme.json في $XDG_CONFIG_HOME/mactop أو ~/.mactop لألوان مخصصة.
 """
 
 Info_Auto = "تلقائي"
@@ -246,7 +250,7 @@ CLI_HelpText = """
       --dump-debug        تشخيص: عرض معلومات تصحيح IOReport/HID/SMC/NVMe والخروج
 
 ملف السمة:
-  أنشئ ~/.mactop/theme.json بألوان hex مخصصة:
+  أنشئ theme.json في $XDG_CONFIG_HOME/mactop أو ~/.mactop بألوان hex مخصصة:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 مزيد من المعلومات: https://github.com/metaspartan/mactop بواسطة Carsen Klock.
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "لم يتم اكتشاف مراوح"
 Fan_NoTemperatureSensorsDetected = "لم يتم اكتشاف مستشعرات حرارة"
 Fan_ControlActive = "[⚠ التحكم بالمراوح نشط](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) السرعة  [a](fg:%s,mod:bold) تلقائي  [0/9](fg:%s,mod:bold) أدنى/أقصى  [R](fg:green,mod:bold) إعادة تعيين  [l](fg:%s) تخطيط  [F](fg:%s) خروج"
 Fan_ReadOnly = "[للقراءة فقط](fg:%s)  استخدم --fan-control للكتابة  |  [l](fg:%s,mod:bold) تخطيط  [F](fg:%s,mod:bold) إغلاق عرض المراوح"
+Fan_NeedsRoot = "[⚠ يتطلب التحكم بالمراوح صلاحيات root — أعد التشغيل بـ: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ آخر عملية كتابة لم يكن لها تأثير (رفضها النظام)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W الإجمالي (الأقصى: %.2f W)"
 Metrics_PowerSparklineTitle = "المتوسط %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "لاسلكي"
 TempCategory_Display = "العرض"
 TempCategory_Other = "أخرى"
+
+Info_Battery = "البطارية"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "قيد الشحن"
+Info_BatteryDischarging = "على البطارية"
+Info_BatteryAC = "التيار المتردد"
+
+TUI_MemoryBandwidthHistory = "سجل عرض نطاق الذاكرة"
+Metrics_MemBWHistoryDetail = "عرض نطاق DRAM: %.1f GB/s"

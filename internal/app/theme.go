@@ -243,6 +243,7 @@ func applyCustomWidgetColors(theme *CustomThemeConfig, fgColor ui.Color) {
 	styleStepChart(gpuHistoryChart, gpuColor)
 	styleStepChart(powerHistoryChart, powerColor)
 	styleStepChart(memoryHistoryChart, resolveCustomColor(theme.Memory, fgColor))
+	styleStepChart(memBWHistoryChart, resolveCustomColor(theme.Memory, fgColor))
 	styleStepChart(cpuHistoryChart, resolveCustomColor(theme.CPU, fgColor))
 
 	// Paragraphs
@@ -303,7 +304,7 @@ func applyThemeToSparklines(color ui.Color) {
 }
 
 func applyThemeToStepCharts(color ui.Color) {
-	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart} {
+	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart} {
 		styleStepChart(sc, color)
 	}
 }
@@ -555,7 +556,7 @@ func GetProcessTextColor(isCurrentUser bool) string {
 	return "#888888" // Grey for non-current-user (root/system) processes
 }
 
-func cycleTheme() {
+func cycleTheme(step int) {
 	currentIndex := 0
 	for i, name := range themeOrder {
 		if name == currentConfig.Theme {
@@ -563,7 +564,8 @@ func cycleTheme() {
 			break
 		}
 	}
-	nextIndex := (currentIndex + 1) % len(themeOrder)
+	n := len(themeOrder)
+	nextIndex := ((currentIndex+step)%n + n) % n
 	currentColorName = themeOrder[nextIndex]
 
 	// When cycling themes, clear the custom theme configuration to prevent
@@ -600,9 +602,10 @@ func applyInitialBackground() {
 	applyBackground(bgName)
 }
 
-// cycleBackground cycles through background colors
-func cycleBackground() {
-	currentBgIndex = (currentBgIndex + 1) % len(bgColorOrder)
+// cycleBackground cycles through background colors. Positive step advances, negative reverses.
+func cycleBackground(step int) {
+	n := len(bgColorOrder)
+	currentBgIndex = ((currentBgIndex+step)%n + n) % n
 	bgName := bgColorOrder[currentBgIndex]
 	applyBackground(bgName)
 	currentConfig.Background = bgName
@@ -714,7 +717,7 @@ func applyBackgroundToSparklines(bgColor ui.Color) {
 }
 
 func applyBackgroundToStepCharts(bgColor ui.Color) {
-	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart}
+	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart}
 	for _, sc := range stepCharts {
 		if sc != nil {
 			sc.BackgroundColor = bgColor
@@ -740,7 +743,7 @@ func hasCustomComponentColors(t *CustomThemeConfig) bool {
 		t.ProcessListSelected != "" || t.SystemInfo != ""
 }
 
-// applyCustomThemeFile loads and applies custom theme from ~/.mactop/theme.json
+// applyCustomThemeFile loads and applies custom theme from the mactop config directory
 // Returns (appliedForeground, appliedBackground) to indicate which colors were set
 func applyCustomThemeFile() (bool, bool) {
 	theme := loadThemeFile()

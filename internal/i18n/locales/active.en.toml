@@ -41,6 +41,7 @@ TUI_GPUUsageHistory = "GPU Usage History"
 TUI_TBNet = "TB Net ↓0/s ↑0/s"
 TUI_PowerHistory = "Power History"
 TUI_MemorySwapHistory = "Memory/Swap History"
+TUI_MemoryBandwidthHistory = "Memory Bandwidth History"
 TUI_CPUUsageHistory = "CPU Usage History"
 TUI_ConfirmKill = " CONFIRM "
 TUI_ConfirmKillBody = "CONFIRM KILL"
@@ -62,6 +63,11 @@ Info_GPUUsage = "GPU Usage"
 Info_ANEUsage = "ANE Usage"
 Info_Power = "Power"
 Info_Thermals = "Thermals"
+Info_Battery = "Battery"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "charging"
+Info_BatteryDischarging = "on battery"
+Info_BatteryAC = "AC"
 Info_Network = "Network"
 Info_Disk = "Disk"
 Info_DRAMBW = "DRAM BW"
@@ -78,6 +84,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Freq: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Nominal"
+Metrics_ThermalModerate = "Moderate"
+Metrics_ThermalHeavy = "Heavy"
+Metrics_ThermalTrapping = "Trapping"
+Metrics_ThermalSleeping = "Sleeping"
 Metrics_ThermalFair = "Fair"
 Metrics_ThermalSerious = "Serious"
 Metrics_ThermalCritical = "Critical"
@@ -142,10 +152,10 @@ Update Interval: %dms
 
 ----Controls----
 - r: Refresh the UI data manually
-- c: Cycle through UI color themes
-- b: Cycle through UI background colors
+- c / Shift + C: Cycle UI color themes forward / backward
+- b / Shift + B: Cycle UI background colors forward / backward
 - p: Toggle party mode (color cycling)
-- l: Cycle through the 18 available layouts
+- l / Shift + L: Cycle through the 19 available layouts forward / backward
 - i: Toggle information layout
 - Shift + F: Toggle fan control & thermals layout
 - F9: Kill selected process (y/n confirm)
@@ -176,7 +186,7 @@ Update Interval: %dms
 --fan-control: Enable interactive fan speed control (Writes to SMC, use with caution*)
 --menubar: Run as a macOS menu bar status item (no TUI)
 
-Theme File: Create ~/.mactop/theme.json for custom colors:
+Theme File: Create theme.json in $XDG_CONFIG_HOME/mactop or ~/.mactop:
 {"foreground": "#9580FF", "background": "#22212C"}
 """
 
@@ -247,7 +257,7 @@ Options:
       --dump-debug        Diagnostic: dump IOReport/HID/SMC/NVMe debug info and exit
 
 Theme File:
-  Create ~/.mactop/theme.json with custom hex colors:
+  Create theme.json in $XDG_CONFIG_HOME/mactop or ~/.mactop:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 For more information, see https://github.com/metaspartan/mactop written by Carsen Klock.
@@ -290,12 +300,15 @@ Fan_NoFansDetected = "No fans detected"
 Fan_NoTemperatureSensorsDetected = "No temperature sensors detected"
 Fan_ControlActive = "[⚠ FAN CONTROL ACTIVE](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Speed  [a](fg:%s,mod:bold) Auto  [0/9](fg:%s,mod:bold) Min/Max  [R](fg:green,mod:bold) Reset  [l](fg:%s) Layout  [F](fg:%s) Exit"
 Fan_ReadOnly = "[Read-only](fg:%s)  Use --fan-control to enable writes  |  [l](fg:%s,mod:bold) Layout  [F](fg:%s,mod:bold) Exit fan view"
+Fan_NeedsRoot = "[⚠ Fan control needs root — restart with: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ last write had no effect (OS rejected)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Total (Max: %.2f W)"
 Metrics_PowerSparklineTitle = "Avg: %.2f W | %s"
 Metrics_PowerHistoryDetail = "Power History (Avg: %.1fW, Max: %.1fW)"
 Metrics_CPUHistoryDetail = "CPU Usage History (%.1f%%)"
 Metrics_MemoryHistoryDetail = "Mem: %.1f/%.1fGB, Swap: %.1fGB"
+Metrics_MemBWHistoryDetail = "DRAM Bandwidth: %.1f GB/s"
 
 TUI_KillPIDTitle = " CONFIRM KILL PID %d "
 

@@ -33,11 +33,12 @@
 - **Thunderbolt bandwidth monitoring**: Real-time throughput for Thunderbolt Bridge interfaces
 - **Thunderbolt Device Tree**: Visual tree of connected Thunderbolt/USB4 devices and their speeds
 - **RDMA Support**: Detection of RDMA over Thunderbolt 5 availability
+- **Battery Monitoring**: Battery percentage and charging state on MacBooks (auto-detected; shown in TUI, headless output, and Prometheus metrics)
 - Disk I/O activity (read/write speeds)
 - Proportional per process GPU usage (experimental)
 - Multiple volume display (shows Mac HD + mounted external volumes)
 - Easy-to-read terminal UI
-- **18 Layouts**: (`l` to cycle layouts)
+- **19 Layouts**: (`l` to cycle layouts) — includes a GPU + Memory focused layout with a DRAM read/write bandwidth history chart
 - **Persistent Settings**: Remembers your Layout and Theme choice across restarts
 - Customizable UI color (green, red, blue, skyblue, magenta, yellow, gold, silver, white, lime, orange, violet, pink, and more) (`c` to cycle colors)
 - Customizable background color (`b` to cycle colors)
@@ -52,12 +53,12 @@
 - **Freeze**: Pause/Resume process list updates (`f`)
 - Party Mode (Randomly cycles through colors) (`p` to toggle)
 - Optional Prometheus Metrics server (default is disabled) (`-p <port>` or `--prometheus <port>`)
-  - Exports: CPU/GPU/ANE usage, E/P/S-core averages, per-core usage (labeled by type), power components, DRAM bandwidth (read/write/combined), memory, network, disk, fan RPM, temperature sensors, thermal state, and more
+  - Exports: CPU/GPU/ANE usage, E/P/S-core averages, per-core usage (labeled by type), power components, DRAM bandwidth (read/write/combined), memory, network, disk, fan RPM, temperature sensors, thermal state, battery (on MacBooks), and more
 - **macOS Menu Bar Mode**: Run as a native menu bar status item (`--menubar`) with sparkline charts, CPU/GPU/Memory gauges, power metrics, DRAM bandwidth, fan RPM, and full system stats
 - Support for all Apple Silicon models
 - **Auto-detect Light/Dark Mode**: Automatically adjusts UI colors based on your terminal's background color or system theme.
 - **Configurable Units**: Customize units for network, disk, and temperature display (`--unit-network`, `--unit-disk`, `--unit-temp`)
-- **Multi-Language Support (i18n)**: 19 languages with automatic system language detection — English, Arabic, Chinese, Dutch, French, German, Hebrew, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish, Vietnamese (`--lang` to override)
+- **Multi-Language Support (i18n)**: 20 languages with automatic system language detection — English, Arabic, Chinese (Simplified & Traditional), Dutch, French, German, Hebrew, Hindi, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish, Vietnamese (`--lang` to override)
 
 ## Install via Homebrew
 
@@ -154,7 +155,7 @@ mactop --headless --format toon
 - `--unit-disk`: Disk unit: auto, byte, kb, mb, gb (default: auto)
 - `--unit-temp`: Temperature unit: celsius, fahrenheit (default: celsius)
 - `--lang`: Language override (e.g., `en`, `es`, `ja`, `zh`). Auto-detects system language if not set. Priority: CLI flag > `MACTOP_LANG` env var > `config.json` > system language.
-- `--fan-control`: Enable interactive fan speed control (**⚠️ writes to SMC** — use with caution, may require sudo on some macOS versions)
+- `--fan-control`: Enable interactive fan speed control (**⚠️ writes to SMC** — use with caution). **Requires root**: writing SMC fan keys is privileged, so you must run `sudo mactop --fan-control`. Without root every fan write is silently rejected (`kIOReturnNotPrivileged`) and the controls appear to do nothing.
 - `--menubar`: Run as a macOS menu bar status item alongside the TUI.
 - `--overlay`: Run as a floating overlay HUD window with FPS metrics. (**Requires Screen Recording permission** — see [Permissions](#permissions) below)
 - `--dump-fps`: Diagnostic tool that dumps display info, screen recording permission status, and tests CGDisplayStream at multiple output sizes. Useful for troubleshooting FPS display issues.
@@ -242,7 +243,10 @@ Reorder sections in expanded mode. Sections appear in the order listed:
 
 ## Theme File Support
 
-Create `~/.mactop/theme.json` to customize colors:
+Create `theme.json` in mactop's config directory to customize colors:
+
+- If `XDG_CONFIG_HOME` is set to an absolute path: `$XDG_CONFIG_HOME/mactop/theme.json`
+- Otherwise: `~/.mactop/theme.json`
 
 ### Basic Colors
 
@@ -304,6 +308,18 @@ Individual component colors that override the foreground:
 
 Priority order: CLI flags > theme.json > saved config.
 
+## Config and Log Paths
+
+mactop supports XDG directory variables while preserving the original path layout when those variables are unset.
+
+| File | XDG path when set | Legacy fallback |
+|------|-------------------|-----------------|
+| Config | `$XDG_CONFIG_HOME/mactop/config.json` | `~/.mactop/config.json` |
+| Theme | `$XDG_CONFIG_HOME/mactop/theme.json` | `~/.mactop/theme.json` |
+| Log | `$XDG_STATE_HOME/mactop/mactop.log` | `~/.mactop/mactop.log` |
+
+Relative XDG paths are ignored; XDG base directories must be absolute paths.
+
 ## mactop Commands
 
 Use the following keys to interact with the application while its running:
@@ -315,7 +331,7 @@ Use the following keys to interact with the application while its running:
 - `p`: Party Mode (Randomly cycles through colors)
 - `i`: Toggle Info layout (displays system info)
 - `F` (Shift+f): Toggle Fan & Thermals layout (fan monitoring + all temperature sensors)
-- `l`: Cycle through the 18 available layouts.
+- `l`: Cycle through the 19 available layouts.
 - `+` or `=`: Increase update interval (slower updates).
 - `-`: Decrease update interval (faster updates).
 - `F9`: Kill the currently selected process (pauses updates while selecting).
@@ -325,7 +341,11 @@ Use the following keys to interact with the application while its running:
 - `Enter` or `Space`: Sort by the selected column.
 - `h` or `?`: Toggle the help menu.
 
-### Fan Control Keys (requires `--fan-control` flag, only active in Fan layout)
+### Fan Control Keys (requires `--fan-control` flag + `sudo`, only active in Fan layout)
+
+> Fan control writes to the SMC, which is privileged — run with `sudo mactop --fan-control`.
+> Without root the keys below have no effect (mactop will show a warning in the Fan panel).
+> Note: on recent macOS the system thermal governor may also override manual fan targets.
 
 - `+` or `=`: Increase fan speed (+100 RPM)
 - `-`: Decrease fan speed (-100 RPM)

@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "주파수: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "정상"
+Metrics_ThermalModerate = "보통"
+Metrics_ThermalHeavy = "높음"
+Metrics_ThermalTrapping = "심각"
+Metrics_ThermalSleeping = "절전"
 Metrics_ThermalFair = "주의"
 Metrics_ThermalSerious = "심각"
 Metrics_ThermalCritical = "위험"
@@ -143,10 +147,10 @@ Prometheus 메트릭: %s
 
 ----컨트롤----
 - r: UI 데이터를 수동으로 새로고침
-- c: UI 색상 테마 순환
-- b: UI 배경색 순환
+- c / Shift + C: UI 색상 테마 순환 정방향 / 역방향
+- b / Shift + B: UI 배경색 순환 정방향 / 역방향
 - p: 파티 모드 토글 (색상 순환)
-- l: 18개의 사용 가능한 레이아웃 순환
+- l / Shift + L: 19개의 사용 가능한 레이아웃 순환 정방향 / 역방향
 - i: 정보 레이아웃 토글
 - Shift + F: 팬 제어 및 온도 레이아웃 토글
 - F9: 선택된 프로세스 종료 (y/n 확인)
@@ -177,7 +181,7 @@ Prometheus 메트릭: %s
 --fan-control: 대화형 팬 속도 제어 활성화 (SMC에 기록, 주의 사용*)
 --menubar: macOS 메뉴 막대 상태 항목으로 실행 (TUI 없음)
 
-테마 파일: 사용자 정의 색상을 위해 ~/.mactop/theme.json 을 생성하세요
+테마 파일: 사용자 정의 색상을 위해 $XDG_CONFIG_HOME/mactop 또는 ~/.mactop 에 theme.json 을 생성하세요
 """
 
 Info_Auto = "자동"
@@ -246,7 +250,7 @@ CLI_HelpText = """
       --dump-debug        진단: IOReport/HID/SMC/NVMe 디버그 정보를 출력하고 종료
 
 테마 파일:
-  ~/.mactop/theme.json 을 생성해 사용자 정의 hex 색상을 설정하세요:
+  $XDG_CONFIG_HOME/mactop 또는 ~/.mactop 에 theme.json 을 생성해 사용자 정의 hex 색상을 설정하세요:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 더 많은 정보: https://github.com/metaspartan/mactop (Carsen Klock)
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "팬이 감지되지 않았습니다"
 Fan_NoTemperatureSensorsDetected = "온도 센서가 감지되지 않았습니다"
 Fan_ControlActive = "[⚠ 팬 제어 활성화됨](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 속도  [a](fg:%s,mod:bold) 자동  [0/9](fg:%s,mod:bold) 최소/최대  [R](fg:green,mod:bold) 초기화  [l](fg:%s) 레이아웃  [F](fg:%s) 종료"
 Fan_ReadOnly = "[읽기 전용](fg:%s)  쓰기를 허용하려면 --fan-control 사용  |  [l](fg:%s,mod:bold) 레이아웃  [F](fg:%s,mod:bold) 팬 보기 종료"
+Fan_NeedsRoot = "[⚠ 팬 제어에는 root 권한이 필요합니다 — 재실행: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 마지막 쓰기가 적용되지 않음 (OS 거부)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 총합 (최대: %.2f W)"
 Metrics_PowerSparklineTitle = "평균 %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "무선"
 TempCategory_Display = "디스플레이"
 TempCategory_Other = "기타"
+
+Info_Battery = "배터리"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "충전 중"
+Info_BatteryDischarging = "배터리 사용"
+Info_BatteryAC = "AC 전원"
+
+TUI_MemoryBandwidthHistory = "메모리 대역폭 기록"
+Metrics_MemBWHistoryDetail = "DRAM 대역폭: %.1f GB/s"

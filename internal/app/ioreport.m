@@ -9,6 +9,7 @@
 #import <IOKit/IOCFPlugIn.h>
 #include <mach/mach_host.h>
 #include <mach/mach_init.h>
+#include <mach/mach_time.h>
 #include <mach/processor_info.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +19,7 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <notify.h>
 
 // Wi-Fi link info structure
 typedef struct {
@@ -155,6 +157,13 @@ extern double IOHIDEventGetFloatValue(IOHIDEventRef event, int64_t field);
 #define kHIDUsage_AppleVendor_TemperatureSensor 0x0005
 #define kIOHIDEventTypeTemperature 15
 
+// Minimum plausible temperature for an active silicon (CPU/GPU) sensor, in °C.
+// Right after boot some SMC/HID temperature sensors transiently report a tiny
+// uninitialized value (e.g. ~2°C) before they begin tracking real die temps.
+// Powered Apple Silicon never actually idles below this, so any reading at or
+// under this floor is rejected to avoid a brief bogus dip (see issue #70).
+#define kSiliconMinTempC 10.0f
+
 // Fan info structure
 typedef struct {
   char name[32];
@@ -193,6 +202,15 @@ static int g_all_temp_sensor_count = 0;
 static int g_expected_ecores = 0;
 static int g_expected_pcores = 0;
 static int g_expected_scores = 0;
+// Set when AMC/DCS direct counters can be trusted. When true, a zero DCS sample
+// is valid and must not be replaced with the power estimate.
+static int g_direct_dram_bw_available = 0;
+static int g_direct_dram_bw_zero_samples = 0;
+static int g_dram_bw_fallback_enabled = 0;
+static int g_pmp_channels_attempted = 0;
+static int g_bg_calibration_started = 0;
+static double g_dramPowerFloorW = 0.0;
+static int g_dram_power_calibrated = 0;
 
 void setExpectedCoreCounts(int eCores, int pCores, int sCores) {
   g_expected_ecores = eCores;
@@ -228,7 +246,43 @@ static IOHIDEventSystemClientRef getHIDClient(void) {
   return g_hidClient;
 }
 
+// Cached HID services array. IOHIDEventSystemClientCopyServices is an IPC to
+// hidd that allocates a CFArray plus a CFTypeRef per service every call —
+// significant CF / DRAM traffic when invoked once per sample tick. The HID
+// service topology is stable on a running Mac (NVMe hotplug etc. is rare), so
+// we cache the array and refresh every HID_SERVICES_TTL_NS. Callers receive
+// a *borrowed* reference and MUST NOT CFRelease it; the cache owns the +1.
+static CFArrayRef g_hidServicesCache = NULL;
+static uint64_t g_hidServicesCacheTimeNs = 0;
+static const uint64_t HID_SERVICES_TTL_NS = 5000000000ULL; // 5s
+
+static CFArrayRef getCachedHIDServices(void) {
+  static mach_timebase_info_data_t tb = {0, 0};
+  if (tb.denom == 0) mach_timebase_info(&tb);
+  uint64_t nowNs = mach_absolute_time() * tb.numer / tb.denom;
+  if (g_hidServicesCache != NULL &&
+      (nowNs - g_hidServicesCacheTimeNs) < HID_SERVICES_TTL_NS) {
+    return g_hidServicesCache;
+  }
+  IOHIDEventSystemClientRef client = getHIDClient();
+  if (client == NULL) return g_hidServicesCache; // may be NULL
+  CFArrayRef fresh = IOHIDEventSystemClientCopyServices(client);
+  if (fresh == NULL) {
+    // hidd transient failure — keep prior cache rather than reporting empty.
+    return g_hidServicesCache;
+  }
+  if (g_hidServicesCache != NULL) CFRelease(g_hidServicesCache);
+  g_hidServicesCache = fresh;
+  g_hidServicesCacheTimeNs = nowNs;
+  return g_hidServicesCache;
+}
+
 static int cfStringStartsWith(CFStringRef str, const char *prefix);
+static int amcChannelDirection(const char *chn);
+static int isExactAggregateDCSChannel(const char *chn);
+static int isPartitionDCSChannel(const char *chn);
+static int isClientDCSChannel(const char *chn);
+static int validIOReportCounter(int64_t val);
 static void loadSMCTempKeys();
 static void loadAllTempSensors();
 
@@ -441,12 +495,10 @@ static void loadGpuFrequencies() {
   IOObjectRelease(iterator);
 }
 
-// === kperf-based DRAM BW monitoring (fallback for M5+ chips) ===
-// On M5+ chips, IOReport AMC Stats channels are kernel-blocked.
-// We use hardware PMU counters (L1D cache miss events) via Apple's
-// private kperf/kpep frameworks to measure CPU-side DRAM bandwidth.
-// Each L1D cache miss = 128-byte cache line fetch from L2/DRAM.
-// Requires root for PMU access; works without root but BW shows 0.
+// === kperf-based DRAM BW monitoring (fallback when direct byte counters fail) ===
+// We use hardware PMU counters (L1D cache miss events) via Apple's private
+// kperf/kpep frameworks as a CPU-side estimate. Direct AMC/DCS or PMP byte
+// counters are preferred whenever they produce data.
 
 #define KPC_CLASS_FIXED  1
 #define KPC_CLASS_CONFIG 2
@@ -639,16 +691,17 @@ static int cfStringMatch(CFStringRef str, const char *cStr);
 static int cfStringStartsWith(CFStringRef str, const char *prefix);
 static double energyToWatts(int64_t energy, CFStringRef unitRef, double durationMs);
 
-// === Auto-calibration for DRAM power → bandwidth conversion ===
-// On M5+ chips where AMC Stats is kernel-blocked, we estimate DRAM BW from
-// DRAM power. The conversion factor (GB/s per watt) is chip-specific, so we
-// auto-calibrate at startup by running a brief known workload:
+// === Auto-calibration for DRAM power -> bandwidth conversion ===
+// When direct byte counters are unavailable or appear blocked, estimate DRAM BW
+// from DRAM power. The conversion factor (GB/s per watt) is source- and
+// machine-dependent, so use the estimate only after local calibration:
 //   1. Spawn 4 threads reading 256MB buffers (>> L2 cache → every read hits DRAM)
 //   2. Measure exact bytes read and DRAM power delta simultaneously
 //   3. Derive: g_dramGBsPerWatt = measured_throughput / measured_power_delta
-// This makes the formula accurate on ANY chip without hard-coding.
-static double g_dramGBsPerWatt = 25.1; // default fallback
-static double g_dramIdlePowerW = 0.3;  // DRAM idle/static power (leakage + refresh)
+// This avoids chip tables and avoids reporting idle bandwidth from a static
+// built-in coefficient.
+static double g_dramGBsPerWatt = 0.0;
+static double g_dramIdlePowerW = 0.0;  // DRAM idle/static power (leakage + refresh)
 static volatile int g_calib_running = 0;
 static volatile int64_t g_calib_bytes = 0;
 
@@ -681,7 +734,67 @@ static void *bgCalibrationThread(void *arg) {
   return NULL;
 }
 
-// Run auto-calibration. Called once at init when power-based DRAM BW is needed.
+static void startBgCalibrationOnce(void) {
+  if (__sync_lock_test_and_set(&g_bg_calibration_started, 1) != 0)
+    return;
+
+  pthread_t bgThread;
+  if (pthread_create(&bgThread, NULL, bgCalibrationThread, NULL) == 0) {
+    pthread_detach(bgThread);
+  } else {
+    g_bg_calibration_started = 0;
+  }
+}
+
+static void ensurePMPDramChannels(void) {
+  if (g_pmp_channels_attempted || g_channels == NULL)
+    return;
+
+  CFDictionaryRef pmpChan =
+      IOReportCopyChannelsInGroup(CFSTR("PMP"), NULL, 0, 0, 0);
+  if (pmpChan == NULL) {
+    // No PMP group exists on this machine — permanent, mark attempted so we
+    // don't probe every sample.
+    g_pmp_channels_attempted = 1;
+    return;
+  }
+
+  // Merge into a COPY; only publish it once the new subscription succeeds, so
+  // g_channels and g_subscription always stay a consistent pair — otherwise
+  // IOReportCreateSamples would run a subscription that doesn't cover the
+  // merged channel set and PMP DRAM fallback data would never arrive.
+  //
+  // Transient failures below (allocation, subscription) deliberately leave
+  // g_pmp_channels_attempted unset so a later sample can retry: a one-off
+  // failure must not permanently disable PMP fallback for the whole process.
+  CFMutableDictionaryRef merged =
+      CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, g_channels);
+  if (merged == NULL) {
+    CFRelease(pmpChan);
+    return; // transient allocation failure — retry on a later sample
+  }
+  IOReportMergeChannels((CFDictionaryRef)merged, pmpChan, NULL);
+  CFRelease(pmpChan);
+
+  CFMutableDictionaryRef subsystem = NULL;
+  IOReportSubscriptionRef newSub =
+      IOReportCreateSubscription(NULL, merged, &subsystem, 0, NULL);
+  if (newSub == NULL) {
+    CFRelease(merged); // transient — retry on a later sample
+    return;
+  }
+
+  // Publish the merged pair. We deliberately do NOT CFRelease the previous
+  // g_subscription/g_channels: the background calibration thread reads both
+  // globals without locking, so freeing them here would risk a use-after-free.
+  // This swap succeeds at most once per process (flag set below), so the
+  // leaked pre-PMP subscription/channel dict is a one-time, negligible cost.
+  g_channels = merged;
+  g_subscription = newSub;
+  g_pmp_channels_attempted = 1;
+}
+
+// Run auto-calibration when power-based DRAM BW is needed.
 // Takes ~2 seconds. Measures DRAM power during known workload to derive
 // the GB/s-per-watt constant for this specific chip.
 static void calibrateDramBwFromPower(void) {
@@ -771,9 +884,12 @@ static void calibrateDramBwFromPower(void) {
     g_dramIdlePowerW = idleDramPower * 0.9;
     // Sanity check: should be between 5 and 500 GB/s per watt
     if (g_dramGBsPerWatt < 5.0 || g_dramGBsPerWatt > 500.0) {
-      g_dramGBsPerWatt = 25.1; // fall back to default
+      g_dramGBsPerWatt = 0.0;
+      g_dramIdlePowerW = 0.0;
+      return;
     }
     if (g_dramIdlePowerW < 0) g_dramIdlePowerW = 0;
+    g_dram_power_calibrated = 1;
   }
 }
 
@@ -827,8 +943,8 @@ int initIOReport() {
 
   // DON'T subscribe to PMP yet — probe AMC Stats first.
   // PMP adds hundreds of channels that increase kernel IPC cost
-  // on every IOReportCreateSamples call. Only needed on A-series
-  // where AMC Stats doesn't produce data.
+  // on every IOReportCreateSamples call. It is only needed when AMC bandwidth
+  // counters are absent or prove unusable at runtime.
 
   CFIndex size = CFDictionaryGetCount(energyChan);
   g_channels =
@@ -866,9 +982,18 @@ int initIOReport() {
   g_smcConn = SMCOpen();
   loadSMCTempKeys();
 
-  // Probe AMC Stats with a quick 50ms sample to check if it produces data.
-  // This determines whether we need PMP channels and DRAM BW calibration.
-  int hasDirectBW = 0;
+  // Probe AMC Stats with a quick 50ms sample. Channel presence tells us a
+  // direct byte source exists. We don't infer anything from whether data is
+  // flowing yet — an idle probe is legitimately zero; the sampler decides at
+  // runtime (per-sample, guarded by load) whether the counters are stalled.
+  g_direct_dram_bw_available = 0;
+  g_direct_dram_bw_zero_samples = 0;
+  g_dram_bw_fallback_enabled = 0;
+  g_pmp_channels_attempted = 0;
+  g_bg_calibration_started = 0;
+  g_dramPowerFloorW = 0.0;
+  g_dram_power_calibrated = 0;
+  int hasDirectBWChannels = 0;
   {
     CFDictionaryRef probe1 = IOReportCreateSamples(g_subscription, g_channels, NULL);
     usleep(50000); // 50ms probe (sufficient to detect non-zero AMC data)
@@ -878,7 +1003,7 @@ int initIOReport() {
       if (probeDelta) {
         CFArrayRef arr = CFDictionaryGetValue(probeDelta, CFSTR("IOReportChannels"));
         CFIndex cnt = arr ? CFArrayGetCount(arr) : 0;
-        for (CFIndex i = 0; i < cnt && !hasDirectBW; i++) {
+        for (CFIndex i = 0; i < cnt; i++) {
           CFDictionaryRef ch = (CFDictionaryRef)CFArrayGetValueAtIndex(arr, i);
           CFStringRef grp = IOReportChannelGetGroup(ch);
           if (!grp) continue;
@@ -889,9 +1014,13 @@ int initIOReport() {
             CFStringRef nameRef = IOReportChannelGetChannelName(ch);
             if (nameRef)
               CFStringGetCString(nameRef, name, sizeof(name), kCFStringEncodingUTF8);
-            if (strstr(name, "RD") || strstr(name, "WR")) {
-              int64_t val = IOReportSimpleGetIntegerValue(ch, 0);
-              if (val > 0) hasDirectBW = 1;
+            int isBWChannel = isExactAggregateDCSChannel(name) ||
+                              isPartitionDCSChannel(name) ||
+                              isClientDCSChannel(name) ||
+                              (amcChannelDirection(name) != 0 &&
+                               strstr(name, "DCS") != NULL);
+            if (isBWChannel) {
+              hasDirectBWChannels = 1;
             }
           }
         }
@@ -901,37 +1030,15 @@ int initIOReport() {
     if (probe1) CFRelease(probe1);
     if (probe2) CFRelease(probe2);
   }
+  g_direct_dram_bw_available = hasDirectBWChannels;
 
-  // Only add PMP channels if AMC Stats doesn't produce data (A-series chips).
-  // On M-series, this saves hundreds of kernel-iterated channels per tick.
-  if (!hasDirectBW) {
-    CFDictionaryRef pmpChan =
-        IOReportCopyChannelsInGroup(CFSTR("PMP"), NULL, 0, 0, 0);
-    if (pmpChan != NULL) {
-      IOReportMergeChannels((CFDictionaryRef)g_channels, pmpChan, NULL);
-      CFRelease(pmpChan);
-
-      // Re-create subscription with PMP channels included.
-      // Guard: don't lose the working subscription if this fails.
-      IOReportSubscriptionRef newSub =
-          IOReportCreateSubscription(NULL, g_channels, &subsystem, 0, NULL);
-      if (newSub != NULL) {
-        g_subscription = newSub;
-      }
-    }
-
-    // Defer kperf init + DRAM BW calibration to a background pthread.
-    // This avoids blocking initIOReport() for ~2.5s on M5+ chips.
-    // Until calibration completes, DRAM BW uses the default fallback
-    // constant (g_dramGBsPerWatt = 25.1) which provides reasonable estimates.
-    pthread_t bgThread;
-    if (pthread_create(&bgThread, NULL, bgCalibrationThread, NULL) == 0) {
-      pthread_detach(bgThread); // fire-and-forget
-    } else {
-      // If thread creation fails, run synchronously as fallback
-      initKperfDramBW();
-      calibrateDramBwFromPower();
-    }
+  // Only add PMP channels when no direct AMC bandwidth channels exist. If AMC
+  // channels exist but remain zero under load, the sampler enables fallback and
+  // re-subscribes with PMP dynamically.
+  if (!g_direct_dram_bw_available) {
+    // PMP is cheap to add compared with calibration; calibration stays deferred
+    // until runtime activity proves there is memory traffic to recover.
+    ensurePMPDramChannels();
   }
 
   return 0;
@@ -959,8 +1066,9 @@ void debugIOReport() {
                                             &kCFTypeDictionaryValueCallBacks);
 
     const char *groups[] = {
-        "Energy Model",           "GPU Stats", "CPU Stats", "ODS",
-        "Performance Statistics", "CLPC",      "PMP",       NULL};
+        "Energy Model",           "GPU Stats", "CPU Stats", "AMC Stats",
+        "ODS",                    "Performance Statistics", "CLPC",
+        "PMP",                    NULL};
 
     for (int i = 0; groups[i] != NULL; i++) {
       CFStringRef groupStr = CFStringCreateWithCString(
@@ -1241,6 +1349,10 @@ typedef struct {
   float gpuTemp;
   int64_t dramReadBytes;
   int64_t dramWriteBytes;
+  // Actual wall-clock interval (ns) between the two IOReport samples used to
+  // derive dramReadBytes/dramWriteBytes. Used by Go to compute exact GB/s
+  // independent of scheduling jitter on usleep(durationMs).
+  int64_t actualDurationNs;
   // Fan data
   int fanCount;
   fan_info_t fans[8];
@@ -1283,6 +1395,74 @@ static int cfStringStartsWith(CFStringRef str, const char *prefix) {
   int result = CFStringHasPrefix(str, prefixRef);
   CFRelease(prefixRef);
   return result;
+}
+
+static int strHasToken(const char *str, const char *token) {
+  if (str == NULL || token == NULL)
+    return 0;
+
+  size_t tokenLen = strlen(token);
+  if (tokenLen == 0)
+    return 0;
+
+  const char *p = str;
+  while ((p = strstr(p, token)) != NULL) {
+    char before = (p == str) ? '\0' : p[-1];
+    char after = p[tokenLen];
+    int beforeOK = (before == '\0' || before == ' ' || before == '-' ||
+                    before == '_' || before == '(' || before == '/');
+    int afterOK = (after == '\0' || after == ' ' || after == '-' ||
+                   after == '_' || after == ')' || after == '/' ||
+                   after == '+');
+    if (beforeOK && afterOK)
+      return 1;
+    p += tokenLen;
+  }
+  return 0;
+}
+
+static int amcChannelDirection(const char *chn) {
+  if (chn == NULL)
+    return 0;
+  if (strstr(chn, "RD+WR") != NULL || strHasToken(chn, "RW"))
+    return 0;
+  if (strHasToken(chn, "RD"))
+    return 1;
+  if (strHasToken(chn, "WR"))
+    return 2;
+  return 0;
+}
+
+static int isExactAggregateDCSChannel(const char *chn) {
+  if (chn == NULL)
+    return 0;
+  if (strcmp(chn, "DCS") == 0 || strcmp(chn, "DCS RD") == 0 ||
+      strcmp(chn, "DCS WR") == 0) {
+    return 1;
+  }
+  return 0;
+}
+
+static int isPartitionDCSChannel(const char *chn) {
+  if (chn == NULL)
+    return 0;
+  if (strncmp(chn, "DCS_", 4) == 0)
+    return 1;
+  if (strncmp(chn, "DCS", 3) == 0 && chn[3] >= '0' && chn[3] <= '9')
+    return 1;
+  return 0;
+}
+
+static int isClientDCSChannel(const char *chn) {
+  return chn != NULL && !isExactAggregateDCSChannel(chn) &&
+         !isPartitionDCSChannel(chn) &&
+         strstr(chn, " DCS ") != NULL;
+}
+
+static int validIOReportCounter(int64_t val) {
+  // IOReportTypes.h defines kIOReportInvalidIntValue as INT64_MIN.
+  // Delta counters for bytes/events should otherwise never be negative.
+  return val >= 0;
 }
 
 static double energyToWatts(int64_t energy, CFStringRef unitRef,
@@ -1589,7 +1769,7 @@ static int readFanInfo(fan_info_t *fans, int maxFans) {
     snprintf(key, sizeof(key), "F%dTg", i);
     fans[i].targetRPM = (int)SMCGetFloatValue(g_smcConn, key);
 
-    // Read mode: F%dMd (flt type — 0.0=auto, 1.0=forced)
+    // Read mode: F%dMd (0=auto, 1=forced; data type varies by Mac model)
     snprintf(key, sizeof(key), "F%dMd", i);
     fans[i].mode = (int)SMCGetFloatValue(g_smcConn, key);
 
@@ -1601,6 +1781,12 @@ static int readFanInfo(fan_info_t *fans, int maxFans) {
 }
 
 // Fan control functions
+//
+// setFanForceTest writes the Intel-era "Ftst" (force test) key. This key does
+// NOT exist on Apple Silicon (verified on M1/M3: the SMC exposes F<n>Md / F<n>Tg
+// but no Ftst), so this call fails there and callers must treat it as
+// best-effort — the actual manual control on Apple Silicon is F<n>Md=1 plus
+// F<n>Tg=<rpm>. It is still attempted for Intel Macs where it helps.
 int setFanForceTest(int enabled) {
   if (!g_smcConn)
     return -1;
@@ -1675,12 +1861,8 @@ static int readHIDCoreTempSensors(temp_sensor_t *out, int maxSensors,
   *outScount = 0;
   *outGPUcount = 0;
 
-  IOHIDEventSystemClientRef client = getHIDClient();
-  if (client == NULL) {
-    return 0;
-  }
-
-  CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
+  // Use the cached HID services array (borrowed reference — do NOT release).
+  CFArrayRef services = getCachedHIDServices();
   if (services == NULL) {
     return 0;
   }
@@ -1719,8 +1901,8 @@ static int readHIDCoreTempSensors(temp_sensor_t *out, int maxSensors,
     CFRelease(event);
     CFRelease(productRef);
 
-    if (temp <= 10 || temp > 150)
-      continue;  // Apply same silicon minimum
+    if (temp <= kSiliconMinTempC || temp > 150)
+      continue;  // Apply same silicon minimum (issue #70)
 
     // Classify by product name
     const char *category = NULL;
@@ -1780,7 +1962,7 @@ static int readHIDCoreTempSensors(temp_sensor_t *out, int maxSensors,
   *outScount = sIdx;
   *outGPUcount = gpuIdx;
 
-  CFRelease(services);
+  // services is a borrowed reference from getCachedHIDServices — do NOT release.
   return count;
 }
 
@@ -1790,30 +1972,32 @@ static float readSocTemperature(float *outCpuTemp, float *outGpuTemp) {
   float gpuSum = 0;
   int gpuCount = 0;
 
-  // Try SMC First
+  // Try SMC First. CPU and GPU die sensors are silicon, so apply the silicon
+  // minimum floor — a freshly-booted sensor reporting ~2°C must not be averaged
+  // in as a real reading (issue #70).
   if (g_smcConn) {
     for (int i = 0; i < g_cpu_key_count; i++) {
       float val = (float)SMCGetFloatValue(g_smcConn, g_cpu_keys[i]);
-      if (val > 0) {
+      if (val > kSiliconMinTempC) {
         cpuSum += val;
         cpuCount++;
       }
     }
     for (int i = 0; i < g_gpu_key_count; i++) {
       float val = (float)SMCGetFloatValue(g_smcConn, g_gpu_keys[i]);
-      if (val > 0) {
+      if (val > kSiliconMinTempC) {
         gpuSum += val;
         gpuCount++;
       }
     }
   }
 
-  // Fallback to HID if SMC failed — reuse cached client
+  // Fallback to HID if SMC failed — reuse cached client + cached services
   if (cpuCount == 0 || gpuCount == 0) {
-    IOHIDEventSystemClientRef client = getHIDClient();
-    if (client != NULL) {
-      CFArrayRef services = IOHIDEventSystemClientCopyServices(client);
-      if (services != NULL) {
+    // Borrowed reference — do NOT release.
+    CFArrayRef services = getCachedHIDServices();
+    if (services != NULL) {
+      {
         CFIndex count = CFArrayGetCount(services);
         for (CFIndex i = 0; i < count; i++) {
           IOHIDServiceClientRef service =
@@ -1842,7 +2026,7 @@ static float readSocTemperature(float *outCpuTemp, float *outGpuTemp) {
           CFRelease(event);
           CFRelease(productRef);
 
-          if (temp > 0 && temp < 150) {
+          if (temp > kSiliconMinTempC && temp < 150) {
             if (strstr(product, "PMU tdie") != NULL ||
                 strstr(product, "pACC") != NULL ||
                 strstr(product, "eACC") != NULL) {
@@ -1858,7 +2042,7 @@ static float readSocTemperature(float *outCpuTemp, float *outGpuTemp) {
             }
           }
         }
-        CFRelease(services);
+        // services is a borrowed reference from getCachedHIDServices — do NOT release.
       }
     }
   }
@@ -2035,6 +2219,13 @@ PowerMetrics samplePowerMetrics(int durationMs) {
 
   @autoreleasepool {
 
+  // Capture wall-clock interval between the two IOReport snapshots so that
+  // DRAM BW (bytes / time) reflects the true measurement window rather than
+  // the requested usleep target (which jitters under scheduling pressure).
+  static mach_timebase_info_data_t s_tb = {0, 0};
+  if (s_tb.denom == 0) mach_timebase_info(&s_tb);
+  uint64_t t1 = mach_absolute_time();
+
   CFDictionaryRef sample1 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
 
@@ -2045,6 +2236,10 @@ PowerMetrics samplePowerMetrics(int durationMs) {
 
   CFDictionaryRef sample2 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
+  uint64_t t2 = mach_absolute_time();
+  if (s_tb.denom != 0) {
+    metrics.actualDurationNs = (int64_t)((t2 - t1) * s_tb.numer / s_tb.denom);
+  }
 
   if (sample2 == NULL) {
     CFRelease(sample1);
@@ -2065,6 +2260,10 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   }
 
   CFIndex count = CFArrayGetCount(channels);
+  double sampleDurationMs = (double)durationMs;
+  if (metrics.actualDurationNs > 0) {
+    sampleDurationMs = (double)metrics.actualDurationNs / 1e6;
+  }
   // Temporary accumulators for CPU cluster metrics.
   // We accumulate here first and assign to metrics after the loop,
   // because on M5+ chips the channel iteration order is not guaranteed
@@ -2080,8 +2279,25 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int pcpuFreq = 0;
   int hasPCPU = 0;
 
+  int64_t amcExactDcsReadBytes = 0;
+  int64_t amcExactDcsWriteBytes = 0;
+  int64_t amcExactDcsCombinedBytes = 0;
+  int64_t amcPartitionDcsReadBytes = 0;
+  int64_t amcPartitionDcsWriteBytes = 0;
+  int64_t amcPartitionDcsCombinedBytes = 0;
+  int64_t amcClientDcsReadBytes = 0;
+  int64_t amcClientDcsWriteBytes = 0;
+  int64_t amcRequestReadBytes = 0;
+  int64_t amcRequestWriteBytes = 0;
+  int hasAmcExactDcsDirectional = 0;
+  int hasAmcExactDcsCombined = 0;
+  int hasAmcPartitionDcsDirectional = 0;
+  int hasAmcPartitionDcsCombined = 0;
+  int hasAmcClientDcs = 0;
+  int hasAmcRequestBytes = 0;
   int64_t pmpDramReadBytes = 0;
   int64_t pmpDramWriteBytes = 0;
+  int64_t pmpDramCombinedBytes = 0;
 
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(channels, i);
@@ -2105,7 +2321,7 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     if (strcmp(grp, "Energy Model") == 0) {
       CFStringRef unitRef = IOReportChannelGetUnitLabel(item);
       int64_t val = IOReportSimpleGetIntegerValue(item, 0);
-      double watts = energyToWatts(val, unitRef, (double)durationMs);
+      double watts = energyToWatts(val, unitRef, sampleDurationMs);
 
       if (strstr(chn, "CPU Energy") != NULL) {
         metrics.cpuPower += watts;
@@ -2284,20 +2500,55 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         }
       }
     } else if (strcmp(grp, "AMC Stats") == 0) {
-      // Sum memory bandwidth from non-DCS channels to avoid double counting.
-      // DCS (DRAM Command Scheduler) channels are a subset of the total.
-      // Works on M-series chips (M1, M2, M3, M4, M5, etc.).
-      if (strstr(chn, "DCS") == NULL) {
-        int64_t val = IOReportSimpleGetIntegerValue(item, 0);
-        if (strstr(chn, "RD") != NULL) {
-          metrics.dramReadBytes += val;
-        } else if (strstr(chn, "WR") != NULL) {
-          metrics.dramWriteBytes += val;
+      int64_t val = IOReportSimpleGetIntegerValue(item, 0);
+      if (!validIOReportCounter(val))
+        continue;
+      int direction = amcChannelDirection(chn);
+
+      // Exact aggregate DCS counters are the closest IOReport exposes to
+      // physical DRAM traffic. Partition DCS counters are summed only if exact
+      // aggregate DCS is absent. Client/fabric counters can double-count on
+      // Ultra-class multi-die chips, so use them only as fallbacks.
+      if (isExactAggregateDCSChannel(chn)) {
+        if (direction == 1) {
+          amcExactDcsReadBytes += val;
+          hasAmcExactDcsDirectional = 1;
+        } else if (direction == 2) {
+          amcExactDcsWriteBytes += val;
+          hasAmcExactDcsDirectional = 1;
+        } else {
+          amcExactDcsCombinedBytes += val;
+          hasAmcExactDcsCombined = 1;
         }
+      } else if (isPartitionDCSChannel(chn)) {
+        if (direction == 1) {
+          amcPartitionDcsReadBytes += val;
+          hasAmcPartitionDcsDirectional = 1;
+        } else if (direction == 2) {
+          amcPartitionDcsWriteBytes += val;
+          hasAmcPartitionDcsDirectional = 1;
+        } else {
+          amcPartitionDcsCombinedBytes += val;
+          hasAmcPartitionDcsCombined = 1;
+        }
+      } else if (isClientDCSChannel(chn)) {
+        if (direction == 1) {
+          amcClientDcsReadBytes += val;
+          hasAmcClientDcs = 1;
+        } else if (direction == 2) {
+          amcClientDcsWriteBytes += val;
+          hasAmcClientDcs = 1;
+        }
+      } else if (direction == 1) {
+        amcRequestReadBytes += val;
+        hasAmcRequestBytes = 1;
+      } else if (direction == 2) {
+        amcRequestWriteBytes += val;
+        hasAmcRequestBytes = 1;
       }
     } else if (strcmp(grp, "PMP") == 0) {
-      // PMP group provides DRAM bandwidth on A-series chips (A18 Pro, etc.)
-      // where AMC Stats channels exist but produce no delta data.
+      // PMP can provide DRAM bandwidth on systems where AMC Stats channels are
+      // absent or do not produce delta data.
       char sub[64] = {0};
       CFStringRef subgroupRef = IOReportChannelGetSubGroup(item);
       if (subgroupRef != NULL) {
@@ -2305,10 +2556,12 @@ PowerMetrics samplePowerMetrics(int durationMs) {
       }
       if (strcmp(sub, "DRAM BW") == 0) {
         int64_t val = IOReportSimpleGetIntegerValue(item, 0);
-        if (val > 0) {
-          if (strstr(chn, "RD") != NULL) {
+        if (validIOReportCounter(val) && val > 0) {
+          if (strstr(chn, "RD+WR") != NULL || strstr(chn, "RW") != NULL) {
+            pmpDramCombinedBytes += val;
+          } else if (amcChannelDirection(chn) == 1) {
             pmpDramReadBytes += val;
-          } else if (strstr(chn, "WR") != NULL) {
+          } else if (amcChannelDirection(chn) == 2) {
             pmpDramWriteBytes += val;
           }
         }
@@ -2343,27 +2596,109 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     metrics.sClusterFreqMHz = sClusterFreq;
   }
 
-  // Fallback: use PMP DRAM BW data when AMC Stats produces no bandwidth data.
-  if (metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0) {
-    metrics.dramReadBytes = pmpDramReadBytes;
-    metrics.dramWriteBytes = pmpDramWriteBytes;
+  if (hasAmcExactDcsDirectional) {
+    metrics.dramReadBytes = amcExactDcsReadBytes;
+    metrics.dramWriteBytes = amcExactDcsWriteBytes;
+  } else if (hasAmcExactDcsCombined) {
+    metrics.dramReadBytes = amcExactDcsCombinedBytes / 2;
+    metrics.dramWriteBytes = amcExactDcsCombinedBytes - metrics.dramReadBytes;
+  } else if (hasAmcPartitionDcsDirectional) {
+    metrics.dramReadBytes = amcPartitionDcsReadBytes;
+    metrics.dramWriteBytes = amcPartitionDcsWriteBytes;
+  } else if (hasAmcPartitionDcsCombined) {
+    metrics.dramReadBytes = amcPartitionDcsCombinedBytes / 2;
+    metrics.dramWriteBytes = amcPartitionDcsCombinedBytes - metrics.dramReadBytes;
+  } else if (hasAmcClientDcs) {
+    metrics.dramReadBytes = amcClientDcsReadBytes;
+    metrics.dramWriteBytes = amcClientDcsWriteBytes;
   }
 
-  // Fallback: estimate DRAM BW from DRAM power (no root needed, M5+ only).
+  if (metrics.dramPower > 0.001 &&
+      (g_dramPowerFloorW <= 0.0 || metrics.dramPower < g_dramPowerFloorW)) {
+    g_dramPowerFloorW = metrics.dramPower;
+  }
+
+  int busyGpu = metrics.gpuActive > 20.0;
+  int busyCpu = metrics.pClusterActive > 50.0 ||
+                metrics.eClusterActive > 50.0 ||
+                metrics.sClusterActive > 50.0;
+  int activeDramPower =
+      g_dramPowerFloorW > 0.0 &&
+      metrics.dramPower > (g_dramPowerFloorW + 0.5) &&
+      metrics.dramPower > (g_dramPowerFloorW * 1.35);
+  int fallbackTrafficLikely = busyGpu || busyCpu || activeDramPower;
+
+  int hasDirectDramSource = hasAmcExactDcsDirectional ||
+                            hasAmcExactDcsCombined ||
+                            hasAmcPartitionDcsDirectional ||
+                            hasAmcPartitionDcsCombined ||
+                            hasAmcClientDcs;
+  int hasDirectDramData =
+      (metrics.dramReadBytes > 0 || metrics.dramWriteBytes > 0);
+  if (hasDirectDramSource) {
+    g_direct_dram_bw_available = 1;
+    if (hasDirectDramData) {
+      // Counters are producing data — trust them and disable any fallback.
+      g_direct_dram_bw_zero_samples = 0;
+      g_dram_bw_fallback_enabled = 0;
+    } else {
+      // DCS read zero. This is evaluated every time (no "seen data" latch):
+      // if the counters worked earlier but later stall under load, we must
+      // re-enable fallback. The fallbackTrafficLikely guard ensures a normal
+      // idle zero never trips it; a single non-zero sample above resets the
+      // counter and turns fallback back off.
+      if (g_direct_dram_bw_zero_samples < 1000000)
+        g_direct_dram_bw_zero_samples++;
+
+      if (g_direct_dram_bw_zero_samples >= 3 && fallbackTrafficLikely) {
+        g_dram_bw_fallback_enabled = 1;
+        ensurePMPDramChannels();
+        startBgCalibrationOnce();
+      }
+    }
+  }
+
+  int allowDramFallback =
+      !g_direct_dram_bw_available || g_dram_bw_fallback_enabled;
+
+  // Fallback: use PMP DRAM BW data when AMC Stats produces no bandwidth data.
+  if (allowDramFallback &&
+      metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0) {
+    metrics.dramReadBytes = pmpDramReadBytes;
+    metrics.dramWriteBytes = pmpDramWriteBytes;
+    if (metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 &&
+        pmpDramCombinedBytes > 0) {
+      metrics.dramReadBytes = pmpDramCombinedBytes / 2;
+      metrics.dramWriteBytes = pmpDramCombinedBytes - metrics.dramReadBytes;
+    }
+  }
+
+  if (!g_direct_dram_bw_available &&
+      metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 &&
+      fallbackTrafficLikely) {
+    if (g_direct_dram_bw_zero_samples < 1000000)
+      g_direct_dram_bw_zero_samples++;
+    if (g_direct_dram_bw_zero_samples >= 3)
+      startBgCalibrationOnce();
+  }
+
+  // Fallback: estimate DRAM BW from DRAM power after local calibration.
   // DRAM power = static (leakage/refresh) + dynamic (data transfer).
   // Only dynamic power correlates with bandwidth, so subtract idle baseline.
   // BW = max(0, (current_power - idle_power)) × calibration_constant
-  // The calibration_constant is auto-derived at startup (see calibrateDramBwFromPower).
-  // This path only fires on M5+ where AMC Stats is kernel-blocked.
-  // On M1-M4/A-series, AMC Stats/PMP provides direct byte counters.
-  if (metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 &&
-      metrics.dramPower > 0.001) {
+  if (allowDramFallback && g_dram_power_calibrated &&
+      metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 &&
+      metrics.dramPower > 0.001 && g_dramGBsPerWatt > 0.0) {
     // Subtract static/idle power — only dynamic power indicates data transfer
     double activePower = metrics.dramPower - g_dramIdlePowerW;
     if (activePower < 0) activePower = 0;
     double dramBwGBs = activePower * g_dramGBsPerWatt;
-    // Convert to bytes for this sample interval
-    double sampleSec = (double)durationMs / 1000.0;
+    // Convert to bytes for this sample interval. Use the actual wall-clock
+    // interval (captured around the IOReport snapshots) when available so
+    // the Go-side division by the same interval recovers dramBwGBs exactly.
+    double sampleSec = (metrics.actualDurationNs > 0)
+                          ? (double)metrics.actualDurationNs / 1e9
+                          : (double)durationMs / 1000.0;
     int64_t totalBytes = (int64_t)(dramBwGBs * 1e9 * sampleSec);
     // Split evenly between read and write (power can't distinguish direction)
     metrics.dramReadBytes = totalBytes / 2;
@@ -2371,11 +2706,22 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   }
 
   // Fallback: use kperf PMU counters for DRAM BW (requires root).
-  if (metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 && g_kperf_active) {
+  if (allowDramFallback &&
+      metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 && g_kperf_active) {
     int64_t kperfRd = 0, kperfWr = 0;
     readKperfDramBW(&kperfRd, &kperfWr);
     metrics.dramReadBytes = kperfRd;
     metrics.dramWriteBytes = kperfWr;
+  }
+
+  // Last-resort compatibility fallback: request counters can over-count fabric
+  // paths, so only use them when no physical DCS source exists and all better
+  // direct/derived sources are unavailable for this sample.
+  if (!g_direct_dram_bw_available &&
+      metrics.dramReadBytes == 0 && metrics.dramWriteBytes == 0 &&
+      hasAmcRequestBytes) {
+    metrics.dramReadBytes = amcRequestReadBytes;
+    metrics.dramWriteBytes = amcRequestWriteBytes;
   }
 
   // Defer readSocTemperature — try to derive CPU/GPU temps from HID per-core data first.
@@ -2545,9 +2891,22 @@ void cleanupIOReport() {
     g_channels = NULL;
   }
   g_subscription = NULL;
+  g_direct_dram_bw_available = 0;
+  g_direct_dram_bw_zero_samples = 0;
+  g_dram_bw_fallback_enabled = 0;
+  g_pmp_channels_attempted = 0;
+  g_bg_calibration_started = 0;
+  g_dramPowerFloorW = 0.0;
+  g_dram_power_calibrated = 0;
   if (g_smcConn) {
     SMCClose(g_smcConn);
     g_smcConn = 0;
+  }
+  // Clean up cached HID services array (owned +1) before its client.
+  if (g_hidServicesCache != NULL) {
+    CFRelease(g_hidServicesCache);
+    g_hidServicesCache = NULL;
+    g_hidServicesCacheTimeNs = 0;
   }
   // Clean up cached HID client
   if (g_hidClient) {
@@ -2569,10 +2928,52 @@ void cleanupIOReport() {
   }
 }
 
+// getThermalState returns the current system thermal pressure level
+// (0=Nominal, 1=Fair, 2=Serious, 3=Critical).
+//
+// It reads the kernel notification "com.apple.system.thermalpressurelevel" —
+// the same authoritative source `powermetrics --samplers thermal` uses for its
+// "Current pressure level", and the signal NSProcessInfo.thermalState is built
+// on. We query it via notify_get_state rather than NSProcessInfo.thermalState
+// because the Foundation property only refreshes when its change notification
+// is serviced on an active run loop; mactop is a polling TUI with no Foundation
+// run loop, so NSProcessInfo.thermalState can return a stale value and stay
+// pinned at "Nominal". notify_get_state actively queries the live kernel state
+// on every call with no run-loop dependency (issue #71).
+//
+// The notification carries the OSThermalPressureLevel scale, which is what
+// powermetrics prints verbatim: 0=Nominal, 1=Moderate, 2=Heavy, 3=Trapping,
+// 4=Sleeping. (Empirically verified against `powermetrics --samplers thermal`:
+// notify value 2 <-> "Heavy".) This is a finer scale than the 4-state
+// NSProcessInfoThermalState, which re-buckets it — so we must NOT route through
+// NSProcessInfo, or e.g. a genuine "Heavy" pressure would mislabel as "Fair".
 int getThermalState() {
+  static int s_token = -1;
+  static int s_registered = 0;
+
+  if (!s_registered) {
+    uint32_t r = notify_register_check(
+        "com.apple.system.thermalpressurelevel", &s_token);
+    s_registered = (r == NOTIFY_STATUS_OK);
+    if (!s_registered)
+      s_token = -1;
+  }
+
+  if (s_token != -1) {
+    uint64_t state = 0;
+    if (notify_get_state(s_token, &state) == NOTIFY_STATUS_OK) {
+      if (state > 4)
+        return 4; // clamp to highest known level (Sleeping)
+      return (int)state;
+    }
+  }
+
+  // Fallback: NSProcessInfo.thermalState if the notification is unavailable.
+  // Note this is the coarser 4-state scale (Nominal/Fair/Serious/Critical),
+  // which only approximately aligns with the pressure levels above; it may be
+  // stale without a run loop, but is better than nothing.
   @autoreleasepool {
-    NSProcessInfo *info = [NSProcessInfo processInfo];
-    return (int)[info thermalState];
+    return (int)[[NSProcessInfo processInfo] thermalState];
   }
 }
 

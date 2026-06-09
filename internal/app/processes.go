@@ -24,10 +24,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mattn/go-runewidth"
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/mattn/go-runewidth"
 
 	ui "github.com/metaspartan/gotui/v5"
 	"github.com/metaspartan/mactop/v2/internal/i18n"
@@ -491,7 +492,7 @@ func buildProcessRows(processes []ProcessMetrics, maxWidths map[string]int) []st
 		timeStr := formatTime(seconds)
 		virtStr := formatMemorySize(p.VSZ)
 		resStr := formatResMemorySize(p.RSS)
-		username := truncateWithEllipsis(p.User, maxWidths["USER"])
+		username := runewidth.Truncate(p.User, maxWidths["USER"], "...")
 
 		cmdName := p.Command // Already simplified by ps -c
 
@@ -508,7 +509,7 @@ func buildProcessRows(processes []ProcessMetrics, maxWidths map[string]int) []st
 			maxWidths["GPU"]-1, gpuPercent,
 			maxWidths["MEM"]-1, p.Memory,
 			maxWidths["TIME"], timeStr,
-			truncateWithEllipsis(cmdName, maxWidths["CMD"]),
+			runewidth.Truncate(cmdName, maxWidths["CMD"], "..."),
 		)
 
 		if i == processList.SelectedRow-1 {

@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "周波数: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "正常"
+Metrics_ThermalModerate = "中程度"
+Metrics_ThermalHeavy = "高"
+Metrics_ThermalTrapping = "深刻"
+Metrics_ThermalSleeping = "スリープ"
 Metrics_ThermalFair = "注意"
 Metrics_ThermalSerious = "深刻"
 Metrics_ThermalCritical = "危険"
@@ -142,10 +146,10 @@ Prometheusメトリクス: %s
 
 ----操作方法----
 - r: UIデータを手動で更新
-- c: UIカラーテーマを変更
-- b: UI背景色を変更
+- c / Shift + C: UIカラーテーマを変更 順方向 / 逆方向
+- b / Shift + B: UI背景色を変更 順方向 / 逆方向
 - p: パーティーモード（カラーサイクル）切替
-- l: 18種類のレイアウトを切り替え
+- l / Shift + L: 19種類のレイアウトを切り替え 順方向 / 逆方向
 - i: 情報画面の表示切替
 - Shift + F: ファン制御＆熱レイアウト表示
 - F9: 選択したプロセスを強制終了 (y/n確認)
@@ -176,7 +180,7 @@ Prometheusメトリクス: %s
 --fan-control: インタラクティブなファン速度制御 (SMC変更)*
 --menubar: macOSメニューバーステータス項目モード
 
-テーマファイル設定：色変更は ~/.mactop/theme.json を作成してください
+テーマファイル設定：色変更は $XDG_CONFIG_HOME/mactop または ~/.mactop に theme.json を作成してください
 """
 
 Info_Auto = "自動"
@@ -246,7 +250,7 @@ CLI_HelpText = """
       --dump-debug        診断: IOReport/HID/SMC/NVMe のデバッグ情報を出力して終了
 
 テーマファイル:
-  ~/.mactop/theme.json を作成してカスタム hex 色を設定します:
+  $XDG_CONFIG_HOME/mactop または ~/.mactop に theme.json を作成してカスタム hex 色を設定します:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 詳細: https://github.com/metaspartan/mactop (Carsen Klock)
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "ファンが検出されませんでした"
 Fan_NoTemperatureSensorsDetected = "温度センサーが検出されませんでした"
 Fan_ControlActive = "[⚠ ファン制御有効](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) 速度  [a](fg:%s,mod:bold) 自動  [0/9](fg:%s,mod:bold) 最小/最大  [R](fg:green,mod:bold) リセット  [l](fg:%s) レイアウト  [F](fg:%s) 終了"
 Fan_ReadOnly = "[読み取り専用](fg:%s)  書き込みを有効にするには --fan-control を使用  |  [l](fg:%s,mod:bold) レイアウト  [F](fg:%s,mod:bold) ファン表示を終了"
+Fan_NeedsRoot = "[⚠ ファン制御には root が必要です — 再起動: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ 直近の書き込みは無効でした (OS が拒否)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W 合計 (最大: %.2f W)"
 Metrics_PowerSparklineTitle = "平均 %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "無線"
 TempCategory_Display = "ディスプレイ"
 TempCategory_Other = "その他"
+
+Info_Battery = "バッテリー"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "充電中"
+Info_BatteryDischarging = "バッテリー駆動"
+Info_BatteryAC = "AC電源"
+
+TUI_MemoryBandwidthHistory = "メモリ帯域幅の履歴"
+Metrics_MemBWHistoryDetail = "DRAM帯域幅: %.1f GB/s"

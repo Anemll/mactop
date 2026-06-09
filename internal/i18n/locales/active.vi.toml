@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "Tần số: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "Bình thường"
+Metrics_ThermalModerate = "Trung bình"
+Metrics_ThermalHeavy = "Cao"
+Metrics_ThermalTrapping = "Nghiêm trọng"
+Metrics_ThermalSleeping = "Ngủ"
 Metrics_ThermalFair = "Khá"
 Metrics_ThermalSerious = "Nghiêm trọng"
 Metrics_ThermalCritical = "Nguy hiểm"
@@ -142,10 +146,10 @@ Tần suất cập nhật: %dms
 
 ----Điều khiển----
 - r: Làm mới dữ liệu UI thủ công
-- c: Đổi chủ đề màu
-- b: Đổi màu nền
+- c / Shift + C: Đổi chủ đề màu tiến / lùi
+- b / Shift + B: Đổi màu nền tiến / lùi
 - p: Chế độ tiệc (vòng lặp màu)
-- l: Chuyển đổi 18 bố cục
+- l / Shift + L: Chuyển đổi 19 bố cục tiến / lùi
 - i: Hiện/ẩn bảng thông tin
 - Shift + F: Điều khiển quạt và bảng nhiệt
 - F9: Kết thúc tiến trình đã chọn (c/k)
@@ -176,7 +180,7 @@ Tần suất cập nhật: %dms
 --fan-control: Điều khiển quạt tương tác (SMC)*
 --menubar: Chế độ thanh menu macOS
 
-Tệp chủ đề: Tạo ~/.mactop/theme.json cho màu tùy chỉnh.
+Tệp chủ đề: tạo theme.json trong $XDG_CONFIG_HOME/mactop hoặc ~/.mactop cho màu tùy chỉnh.
 """
 
 Info_Auto = "Tự động"
@@ -246,7 +250,7 @@ Tùy chọn:
       --dump-debug        Chẩn đoán: hiện thông tin gỡ lỗi IOReport/HID/SMC/NVMe và thoát
 
 Tệp chủ đề:
-  Tạo ~/.mactop/theme.json với màu hex tùy chỉnh:
+  Tạo theme.json trong $XDG_CONFIG_HOME/mactop hoặc ~/.mactop với màu hex tùy chỉnh:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 Thêm thông tin: https://github.com/metaspartan/mactop bởi Carsen Klock.
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "Không phát hiện quạt"
 Fan_NoTemperatureSensorsDetected = "Không phát hiện cảm biến nhiệt"
 Fan_ControlActive = "[⚠ ĐIỀU KHIỂN QUẠT ĐANG HOẠT ĐỘNG](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) Tốc độ  [a](fg:%s,mod:bold) Tự động  [0/9](fg:%s,mod:bold) Tối thiểu/Tối đa  [R](fg:green,mod:bold) Đặt lại  [l](fg:%s) Bố cục  [F](fg:%s) Thoát"
 Fan_ReadOnly = "[Chỉ đọc](fg:%s)  Dùng --fan-control để ghi  |  [l](fg:%s,mod:bold) Bố cục  [F](fg:%s,mod:bold) Đóng chế độ quạt"
+Fan_NeedsRoot = "[⚠ Điều khiển quạt cần root — khởi động lại bằng: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ lần ghi gần nhất không có tác dụng (OS từ chối)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W Tổng (Tối đa: %.2f W)"
 Metrics_PowerSparklineTitle = "TB %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "Không dây"
 TempCategory_Display = "Màn hình"
 TempCategory_Other = "Khác"
+
+Info_Battery = "Pin"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "đang sạc"
+Info_BatteryDischarging = "dùng pin"
+Info_BatteryAC = "nguồn AC"
+
+TUI_MemoryBandwidthHistory = "Lịch sử băng thông bộ nhớ"
+Metrics_MemBWHistoryDetail = "Băng thông DRAM: %.1f GB/s"

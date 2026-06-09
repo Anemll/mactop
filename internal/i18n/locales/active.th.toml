@@ -78,6 +78,10 @@ Metrics_TFLOPs = "FP32 TFLOPs: %.1f"
 Metrics_Freq = "ความถี่: %d MHz"
 Metrics_RPM = "%d RPM"
 Metrics_ThermalNominal = "ปกติ"
+Metrics_ThermalModerate = "ปานกลาง"
+Metrics_ThermalHeavy = "สูง"
+Metrics_ThermalTrapping = "วิกฤต"
+Metrics_ThermalSleeping = "สลีป"
 Metrics_ThermalFair = "พอใช้"
 Metrics_ThermalSerious = "รุนแรง"
 Metrics_ThermalCritical = "วิกฤต"
@@ -142,10 +146,10 @@ Prometheus Metrics: %s
 
 ----การควบคุม----
 - r: รีเฟรชข้อมูล UI ด้วยตนเอง
-- c: เปลี่ยนธีมสี
-- b: เปลี่ยนสีพื้นหลัง
+- c / Shift + C: เปลี่ยนธีมสี ไปข้างหน้า / ย้อนกลับ
+- b / Shift + B: เปลี่ยนสีพื้นหลัง ไปข้างหน้า / ย้อนกลับ
 - p: โหมดปาร์ตี้ (วนสี)
-- l: สลับ 18 เลย์เอาท์
+- l / Shift + L: สลับ 19 เลย์เอาท์ ไปข้างหน้า / ย้อนกลับ
 - i: แสดง/ซ่อนแผงข้อมูล
 - Shift + F: ควบคุมพัดลมและแผงความร้อน
 - F9: สิ้นสุดโปรเซสที่เลือก (ใ/ม)
@@ -176,7 +180,7 @@ Prometheus Metrics: %s
 --fan-control: ควบคุมพัดลมแบบโต้ตอบ (SMC)*
 --menubar: โหมดแถบเมนู macOS
 
-ไฟล์ธีม: สร้าง ~/.mactop/theme.json สำหรับสีที่กำหนดเอง
+ไฟล์ธีม: สร้าง theme.json ใน $XDG_CONFIG_HOME/mactop หรือ ~/.mactop สำหรับสีที่กำหนดเอง
 """
 
 Info_Auto = "อัตโนมัติ"
@@ -246,7 +250,7 @@ CLI_HelpText = """
       --dump-debug        การวินิจฉัย: แสดงข้อมูลดีบัก IOReport/HID/SMC/NVMe และออก
 
 ไฟล์ธีม:
-  สร้าง ~/.mactop/theme.json ด้วยสี hex ที่กำหนดเอง:
+  สร้าง theme.json ใน $XDG_CONFIG_HOME/mactop หรือ ~/.mactop ด้วยสี hex ที่กำหนดเอง:
   {"foreground": "#9580FF", "background": "#22212C"}
 
 ข้อมูลเพิ่มเติม: https://github.com/metaspartan/mactop โดย Carsen Klock
@@ -289,6 +293,8 @@ Fan_NoFansDetected = "ไม่พบพัดลม"
 Fan_NoTemperatureSensorsDetected = "ไม่พบเซ็นเซอร์อุณหภูมิ"
 Fan_ControlActive = "[⚠ การควบคุมพัดลมทำงานอยู่](fg:red,mod:bold)  [+/-](fg:%s,mod:bold) ความเร็ว  [a](fg:%s,mod:bold) อัตโนมัติ  [0/9](fg:%s,mod:bold) ต่ำสุด/สูงสุด  [R](fg:green,mod:bold) รีเซ็ต  [l](fg:%s) เลย์เอาท์  [F](fg:%s) ออก"
 Fan_ReadOnly = "[อ่านอย่างเดียว](fg:%s)  ใช้ --fan-control เพื่อเขียน  |  [l](fg:%s,mod:bold) เลย์เอาท์  [F](fg:%s,mod:bold) ปิดมุมมองพัดลม"
+Fan_NeedsRoot = "[⚠ การควบคุมพัดลมต้องใช้ root — เริ่มใหม่ด้วย: sudo mactop --fan-control](fg:red,mod:bold)"
+Fan_WriteFailed = "  [⚠ การเขียนครั้งล่าสุดไม่มีผล (ระบบปฏิเสธ)](fg:red,mod:bold)"
 
 Metrics_PowerSparklineGroup = "%.2f W รวม (สูงสุด: %.2f W)"
 Metrics_PowerSparklineTitle = "เฉลี่ย %.2f W | %s"
@@ -355,3 +361,12 @@ TempCategory_Thunderbolt = "Thunderbolt"
 TempCategory_Wireless = "ไร้สาย"
 TempCategory_Display = "จอแสดงผล"
 TempCategory_Other = "อื่น ๆ"
+
+Info_Battery = "แบตเตอรี่"
+Info_BatteryValue = "%d%% (%s)"
+Info_BatteryCharging = "กำลังชาร์จ"
+Info_BatteryDischarging = "ใช้แบตเตอรี่"
+Info_BatteryAC = "ไฟ AC"
+
+TUI_MemoryBandwidthHistory = "ประวัติแบนด์วิดท์หน่วยความจำ"
+Metrics_MemBWHistoryDetail = "แบนด์วิดท์ DRAM: %.1f GB/s"

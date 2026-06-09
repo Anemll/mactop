@@ -122,15 +122,21 @@ func handleModeKeys(key string, done chan struct{}) {
 	case "p":
 		togglePartyMode()
 	case "c":
-		handleThemeCycle()
+		handleThemeCycle(1)
+	case "C":
+		handleThemeCycle(-1)
 	case "l":
-		handleLayoutCycle()
+		handleLayoutCycle(1)
+	case "L":
+		handleLayoutCycle(-1)
 	case "h", "?":
 		toggleHelpMenu()
 	case "i":
 		toggleInfoLayout()
 	case "b":
-		handleBackgroundCycle()
+		handleBackgroundCycle(1)
+	case "B":
+		handleBackgroundCycle(-1)
 	case "f":
 		toggleFreeze()
 	case "F":
@@ -210,7 +216,7 @@ func handleKeyboardEvent(e ui.Event, done chan struct{}) {
 	renderMutex.Unlock()
 
 	switch key {
-	case "q", "<C-c>", "r", "p", "c", "l", "h", "?", "i", "b", "f", "F":
+	case "q", "<C-c>", "r", "p", "c", "C", "l", "L", "h", "?", "i", "b", "B", "f", "F":
 		handleModeKeys(key, done)
 	case "-", "_", "+", "=":
 		if !handleFanControlKeys(key) {
