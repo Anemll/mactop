@@ -205,7 +205,6 @@ static int g_expected_scores = 0;
 // Set when AMC/DCS direct counters can be trusted. When true, a zero DCS sample
 // is valid and must not be replaced with the power estimate.
 static int g_direct_dram_bw_available = 0;
-static int g_direct_dram_bw_seen_data = 0;
 static int g_direct_dram_bw_zero_samples = 0;
 static int g_dram_bw_fallback_enabled = 0;
 static int g_pmp_channels_attempted = 0;
@@ -984,10 +983,10 @@ int initIOReport() {
   loadSMCTempKeys();
 
   // Probe AMC Stats with a quick 50ms sample. Channel presence tells us a
-  // direct byte source exists; non-zero data tells us it is already flowing.
-  // An idle probe can legitimately be zero, so do not infer chip generation.
+  // direct byte source exists. We don't infer anything from whether data is
+  // flowing yet — an idle probe is legitimately zero; the sampler decides at
+  // runtime (per-sample, guarded by load) whether the counters are stalled.
   g_direct_dram_bw_available = 0;
-  g_direct_dram_bw_seen_data = 0;
   g_direct_dram_bw_zero_samples = 0;
   g_dram_bw_fallback_enabled = 0;
   g_pmp_channels_attempted = 0;
@@ -995,7 +994,6 @@ int initIOReport() {
   g_dramPowerFloorW = 0.0;
   g_dram_power_calibrated = 0;
   int hasDirectBWChannels = 0;
-  int hasDirectBWData = 0;
   {
     CFDictionaryRef probe1 = IOReportCreateSamples(g_subscription, g_channels, NULL);
     usleep(50000); // 50ms probe (sufficient to detect non-zero AMC data)
@@ -1023,10 +1021,6 @@ int initIOReport() {
                                strstr(name, "DCS") != NULL);
             if (isBWChannel) {
               hasDirectBWChannels = 1;
-              int64_t val = IOReportSimpleGetIntegerValue(ch, 0);
-              if (validIOReportCounter(val) && val > 0) {
-                hasDirectBWData = 1;
-              }
             }
           }
         }
@@ -1037,7 +1031,6 @@ int initIOReport() {
     if (probe2) CFRelease(probe2);
   }
   g_direct_dram_bw_available = hasDirectBWChannels;
-  g_direct_dram_bw_seen_data = hasDirectBWData;
 
   // Only add PMP channels when no direct AMC bandwidth channels exist. If AMC
   // channels exist but remain zero under load, the sampler enables fallback and
@@ -2645,10 +2638,15 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   if (hasDirectDramSource) {
     g_direct_dram_bw_available = 1;
     if (hasDirectDramData) {
-      g_direct_dram_bw_seen_data = 1;
+      // Counters are producing data — trust them and disable any fallback.
       g_direct_dram_bw_zero_samples = 0;
       g_dram_bw_fallback_enabled = 0;
-    } else if (!g_direct_dram_bw_seen_data) {
+    } else {
+      // DCS read zero. This is evaluated every time (no "seen data" latch):
+      // if the counters worked earlier but later stall under load, we must
+      // re-enable fallback. The fallbackTrafficLikely guard ensures a normal
+      // idle zero never trips it; a single non-zero sample above resets the
+      // counter and turns fallback back off.
       if (g_direct_dram_bw_zero_samples < 1000000)
         g_direct_dram_bw_zero_samples++;
 
@@ -2894,7 +2892,6 @@ void cleanupIOReport() {
   }
   g_subscription = NULL;
   g_direct_dram_bw_available = 0;
-  g_direct_dram_bw_seen_data = 0;
   g_direct_dram_bw_zero_samples = 0;
   g_dram_bw_fallback_enabled = 0;
   g_pmp_channels_attempted = 0;
