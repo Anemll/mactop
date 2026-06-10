@@ -218,12 +218,16 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 	// sampler itself executes on a CPU core during the window (≥25 mJ even on
 	// an E-core at 50 ms) and DRAM refresh alone draws ~0.3 W (≥15 mJ), both
 	// far above the 1 mJ counter resolution. macOS 27 beta zeroes every
-	// per-block Energy Model counter, so this trips on the first frame there
-	// and the ANE gauge defaults to its bandwidth-form label instead of a
-	// meaningless "0.00 W" — no ANE traffic required first, no OS-version
-	// sniffing. A sample with working watts (ANEW > 0) still takes precedence
-	// in the display, so a future fixed OS reverts automatically.
-	if intervalSec >= 0.04 && pm.cpuPower == 0 && pm.dramPower == 0 {
+	// per-block Energy Model counter while the aggregate "GPU Energy" channel
+	// keeps flowing — so gpuPower > 0 alongside zero CPU+DRAM is positive
+	// proof of the selective breakage AND that this sample's delta pipeline
+	// produced data at all. Requiring it means a transient all-zero delta
+	// (e.g. a startup hiccup on a healthy OS, where GPU would also read 0)
+	// can never mislatch the session into bandwidth-form labels. No ANE
+	// traffic required first, no OS-version sniffing; a sample with working
+	// watts (ANEW > 0) still takes precedence in the display, so a future
+	// fixed OS reverts automatically.
+	if intervalSec >= 0.04 && pm.gpuPower > 0 && pm.cpuPower == 0 && pm.dramPower == 0 {
 		aneBWModeLatched.Store(true)
 	}
 

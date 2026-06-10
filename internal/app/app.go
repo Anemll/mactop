@@ -1262,7 +1262,10 @@ func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs floa
 		visibleAneWrite := aneWriteBwHistory[len(aneWriteBwHistory)-visibleWidth:]
 		visiblePeak := bwPeakHistory[len(bwPeakHistory)-visibleWidth:]
 
-		scaleMax := bandwidthScaleMax(visibleRead, visibleWrite, visibleAneRead, visibleAneWrite, visiblePeak)
+		// Scale to the drawn series only: bwPeakHistory decays slowly and is
+		// not rendered, so including it would pin the Y-axis high long after a
+		// spike and flatten the live lines.
+		scaleMax := bandwidthScaleMax(visibleRead, visibleWrite, visibleAneRead, visibleAneWrite)
 
 		// In history_soc layout, force a minimum visible scale so the graph
 		// doesn't look completely dead when bandwidth is low (common even with high GPU/ANE load)

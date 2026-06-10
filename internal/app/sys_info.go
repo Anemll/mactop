@@ -266,6 +266,13 @@ func getTotalRAMGB() int {
 // for the current SoC. This is used to compute frequency-adjusted
 // "effective" GPU load in the history_soc layout.
 func GetGPUMaxFreqMHz() int {
+	// Prefer the real per-chip maximum read from hardware (pmgr voltage
+	// states) — correct on every chip including ones newer than the static
+	// table below (which has no M5 entries and a generic default).
+	if hw := GetMaxGPUFrequency(); hw > 0 {
+		return hw
+	}
+
 	model := cachedSOCInfoResult.Name
 	if model == "" {
 		model = getCPUInfo()["machdep.cpu.brand_string"]
