@@ -3039,7 +3039,15 @@ PowerMetrics samplePowerMetrics(int durationMs) {
           }
           if (tot > 0) {
             double avgGBs = weighted / (double)tot;
-            int64_t bytes = (int64_t)(avgGBs * 1e9 * ((double)durationMs / 1000.0));
+            // Scale by the measured sample window (actualDurationNs), not the
+            // requested durationMs: Go divides these bytes by the measured
+            // window to recover GB/s, so using the same interval here makes
+            // the round trip exact under scheduler jitter (the AMC byte
+            // counters need no scaling — they are real bytes).
+            double sampleSec = (metrics.actualDurationNs > 0)
+                                   ? (double)metrics.actualDurationNs / 1e9
+                                   : (double)durationMs / 1000.0;
+            int64_t bytes = (int64_t)(avgGBs * 1e9 * sampleSec);
             // max, not +=: there is exactly one RD and one WR channel in
             // "AF BW", but the channel may appear more than once in a merged
             // subscription — summing would double count.

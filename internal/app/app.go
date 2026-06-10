@@ -1247,6 +1247,11 @@ func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs floa
 	{
 		termWidth, _ := GetCachedTerminalDimensions()
 		visibleWidth := (termWidth / 2) - 4
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			// One-third-width column in the bottom row — match the adjacent
+			// memory and SSD charts' time window.
+			visibleWidth = (termWidth / 3) - 4
+		}
 		if visibleWidth <= 0 || visibleWidth > len(dramReadHistory) {
 			visibleWidth = len(dramReadHistory)
 		}
@@ -1326,7 +1331,9 @@ func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
 		termWidth, _ := GetCachedTerminalDimensions()
 		visibleWidth := termWidth - 4
 		if currentConfig.DefaultLayout == LayoutHistorySoC {
-			visibleWidth = (termWidth / 3) - 4 // narrower because 3 charts side-by-side
+			// Half-width column (row 2, beside the ANE chart) — match the
+			// neighboring CPU/GPU/ANE charts' time window.
+			visibleWidth = (termWidth / 2) - 4
 		}
 		if visibleWidth <= 0 || visibleWidth > len(cpuPowerHistory) {
 			visibleWidth = len(cpuPowerHistory)

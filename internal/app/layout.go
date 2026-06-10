@@ -65,8 +65,16 @@ func cycleLayout(step int) {
 // again while already on it returns to the previously active layout.
 func switchToLayout(layoutName string) {
 	target := layoutName
-	if currentConfig.DefaultLayout == layoutName && previousLayout != "" {
+	if currentConfig.DefaultLayout == layoutName {
+		// Already on the target layout: toggle back to wherever we came from.
+		// If that is unknown or would be a self-jump (e.g. the user reached
+		// this layout by cycling with l/L, so no jump recorded it), fall back
+		// to the default layout so the shortcut always leaves the layout
+		// instead of deadlocking on itself.
 		target = previousLayout
+		if target == "" || target == layoutName {
+			target = LayoutDefault
+		}
 	}
 	previousLayout = currentConfig.DefaultLayout
 	for i, layout := range layoutOrder {
