@@ -923,6 +923,18 @@ int initIOReport() {
     fprintf(stderr, "initIOReport: warning: 'GPU Stats' channel group not found\n");
   }
 
+  // Forward-compat: Apple is migrating block-energy accounting (macOS 27 beta
+  // ships new pmgr "energy-counters" descriptors, and powermetrics carries an
+  // "Energy Counters" group name in its channel tables). Merge that group too
+  // if it ever appears so mactop picks the new source up automatically; absent
+  // on current OSes, this is a no-op.
+  CFDictionaryRef energyCountersChan =
+      IOReportCopyChannelsInGroup(CFSTR("Energy Counters"), NULL, 0, 0, 0);
+  if (energyCountersChan != NULL) {
+    IOReportMergeChannels(energyChan, energyCountersChan, NULL);
+    CFRelease(energyCountersChan);
+  }
+
   CFDictionaryRef cpuChan =
       IOReportCopyChannelsInGroup(cpuGroup, NULL, 0, 0, 0);
   hasCpu = (cpuChan != NULL);
@@ -2306,6 +2318,8 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int64_t pmpDramCombinedBytes = 0;
   int64_t aneReadBytes = 0;
   int64_t aneWriteBytes = 0;
+  double cpuTotalEnergyW = 0;
+  double cpuTypedEnergyW = 0;
 
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(channels, i);
@@ -2326,13 +2340,32 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     CFStringGetCString(groupRef, grp, sizeof(grp), kCFStringEncodingUTF8);
     CFStringGetCString(channelRef, chn, sizeof(chn), kCFStringEncodingUTF8);
 
-    if (strcmp(grp, "Energy Model") == 0) {
+    if (strcmp(grp, "Energy Model") == 0 ||
+        strcmp(grp, "Energy Counters") == 0) {
+      // "Energy Counters" is the successor group name appearing in macOS 27's
+      // pmgr descriptors / powermetrics tables; matched alongside the classic
+      // "Energy Model" so the migration is picked up automatically.
       CFStringRef unitRef = IOReportChannelGetUnitLabel(item);
       int64_t val = IOReportSimpleGetIntegerValue(item, 0);
       double watts = energyToWatts(val, unitRef, sampleDurationMs);
 
-      if (strstr(chn, "CPU Energy") != NULL) {
-        metrics.cpuPower += watts;
+      // CPU energy comes in two naming generations (per powermetrics' own
+      // channel tables): cluster-type channels ("ECPU Energy", "PCPU Energy",
+      // "MCPU Energy", "eCPUs Energy", "mCPUs Energy") and whole-CPU totals
+      // ("CPU Energy", "DIE_n_CPU Energy"). Bucket them separately and prefer
+      // totals after the loop — summing both would double-count on an OS that
+      // exposes the per-type and total channels simultaneously.
+      int isTypedCpuEnergy =
+          strstr(chn, "ECPU Energy") != NULL ||
+          strstr(chn, "PCPU Energy") != NULL ||
+          strstr(chn, "MCPU Energy") != NULL ||
+          strstr(chn, "eCPUs Energy") != NULL ||
+          strstr(chn, "pCPUs Energy") != NULL ||
+          strstr(chn, "mCPUs Energy") != NULL;
+      if (isTypedCpuEnergy) {
+        cpuTypedEnergyW += watts;
+      } else if (strstr(chn, "CPU Energy") != NULL) {
+        cpuTotalEnergyW += watts;
       } else if (strcmp(chn, "GPU Energy") == 0) {
         metrics.gpuPower += watts;
       } else if (strncmp(chn, "ANE", 3) == 0) {
@@ -2615,6 +2648,10 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     metrics.sClusterActive = sClusterActive;
     metrics.sClusterFreqMHz = sClusterFreq;
   }
+
+  // Prefer whole-CPU energy totals; fall back to the sum of cluster-type
+  // channels when only those exist (newer chip/OS naming generations).
+  metrics.cpuPower = (cpuTotalEnergyW > 0) ? cpuTotalEnergyW : cpuTypedEnergyW;
 
   metrics.aneReadBytes = aneReadBytes;
   metrics.aneWriteBytes = aneWriteBytes;
