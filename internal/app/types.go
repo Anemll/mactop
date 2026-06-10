@@ -30,6 +30,7 @@ type CPUMetrics struct {
 	DRAMReadBW                                                       float64
 	DRAMWriteBW                                                      float64
 	DRAMBWCombined                                                   float64
+	ANEBW                                                            float64
 	Fans                                                             []FanInfo
 	TempSensors                                                      []TempSensor
 }

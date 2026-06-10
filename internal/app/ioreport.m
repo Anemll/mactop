@@ -1349,6 +1349,12 @@ typedef struct {
   float gpuTemp;
   int64_t dramReadBytes;
   int64_t dramWriteBytes;
+  // ANE fabric traffic from AMC Stats "ANE<n> RD/WR" counters. Used as an
+  // activity signal for the Neural Engine on OSes where the Energy Model
+  // per-block ANE energy channel exists but no longer accumulates (macOS 27
+  // beta zeroed every per-block energy counter; these byte counters survive).
+  int64_t aneReadBytes;
+  int64_t aneWriteBytes;
   // Actual wall-clock interval (ns) between the two IOReport samples used to
   // derive dramReadBytes/dramWriteBytes. Used by Go to compute exact GB/s
   // independent of scheduling jitter on usleep(durationMs).
@@ -2298,6 +2304,8 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int64_t pmpDramReadBytes = 0;
   int64_t pmpDramWriteBytes = 0;
   int64_t pmpDramCombinedBytes = 0;
+  int64_t aneReadBytes = 0;
+  int64_t aneWriteBytes = 0;
 
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(channels, i);
@@ -2505,6 +2513,18 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         continue;
       int direction = amcChannelDirection(chn);
 
+      // ANE fabric traffic ("ANE0 RD", "ANE1 WR", ...). Tracked separately as
+      // a Neural Engine activity signal; the "ANE<n> DCS *" variants are a
+      // subset already counted by the DRAM client-DCS classification below,
+      // so only the plain fabric counters are summed here. This does not
+      // remove the channel from the DRAM accounting chain.
+      if (strncmp(chn, "ANE", 3) == 0 && strstr(chn, "DCS") == NULL) {
+        if (direction == 1)
+          aneReadBytes += val;
+        else if (direction == 2)
+          aneWriteBytes += val;
+      }
+
       // Exact aggregate DCS counters are the closest IOReport exposes to
       // physical DRAM traffic. Partition DCS counters are summed only if exact
       // aggregate DCS is absent. Client/fabric counters can double-count on
@@ -2595,6 +2615,9 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     metrics.sClusterActive = sClusterActive;
     metrics.sClusterFreqMHz = sClusterFreq;
   }
+
+  metrics.aneReadBytes = aneReadBytes;
+  metrics.aneWriteBytes = aneWriteBytes;
 
   if (hasAmcExactDcsDirectional) {
     metrics.dramReadBytes = amcExactDcsReadBytes;

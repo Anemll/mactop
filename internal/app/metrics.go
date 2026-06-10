@@ -119,11 +119,49 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		DRAMReadBW:      m.DRAMReadBW,
 		DRAMWriteBW:     m.DRAMWriteBW,
 		DRAMBWCombined:  m.DRAMBWCombined,
+		ANEBW:           m.ANEBWGBs,
 		Fans:            m.Fans,
 		TempSensors:     m.TempSensors,
 		CoreUsages:      coreUsages,
 		AvgUsage:        avgUsage,
 	}
+}
+
+// aneMaxPowerW is the assumed full-tilt ANE power draw used for the
+// power-based utilization estimate (historical mactop behavior).
+const aneMaxPowerW = 8.0
+
+// aneBWRefFloorGBs is the minimum bandwidth treated as "100% ANE activity"
+// for the bandwidth-based estimate. A saturating conv workload measured
+// ~3.5-3.8 GB/s of ANE fabric traffic on M1 Ultra; the reference grows
+// adaptively if higher bandwidth is ever observed (maxANEBWSeen).
+const aneBWRefFloorGBs = 4.0
+
+// aneUtilizationPercent estimates Neural Engine utilization. It prefers the
+// power-based estimate from the Energy Model ANE channel; when that channel
+// is dead (macOS 27 beta zeroed all per-block energy counters) but the AMC
+// "ANE RD/WR" byte counters show traffic, it falls back to a bandwidth-based
+// activity estimate so ANE usage doesn't silently read 0 on newer OSes.
+func aneUtilizationPercent(m CPUMetrics) float64 {
+	if m.ANEW > 0 {
+		pct := m.ANEW / aneMaxPowerW * 100
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	if m.ANEBW > 0 {
+		if m.ANEBW > maxANEBWSeen {
+			maxANEBWSeen = m.ANEBW
+		}
+		ref := max(maxANEBWSeen, aneBWRefFloorGBs)
+		pct := m.ANEBW / ref * 100
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	return 0
 }
 
 func gpuMetricsFromSoc(m SocMetrics) GPUMetrics {

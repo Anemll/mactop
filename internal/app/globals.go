@@ -58,6 +58,7 @@ var (
 	memBWReadHistory                                                        = make([]float64, 100)
 	memBWWriteHistory                                                       = make([]float64, 100)
 	maxMemBWSeen                                                            float64
+	maxANEBWSeen                                                            float64
 
 	cpuCoreWidget                 *CPUCoreWidget
 	powerValues                   = make([]float64, 35)

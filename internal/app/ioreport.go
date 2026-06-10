@@ -81,6 +81,8 @@ typedef struct {
     float gpuTemp;
     int64_t dramReadBytes;
     int64_t dramWriteBytes;
+    int64_t aneReadBytes;
+    int64_t aneWriteBytes;
     int64_t actualDurationNs;
     int fanCount;
     fan_info_t fans[8];
@@ -156,6 +158,7 @@ type SocMetrics struct {
 	DRAMReadBW      float64      `json:"dram_read_bw_gbs"`
 	DRAMWriteBW     float64      `json:"dram_write_bw_gbs"`
 	DRAMBWCombined  float64      `json:"dram_bw_combined_gbs"`
+	ANEBWGBs        float64      `json:"ane_bw_gbs"`
 	Fans            []FanInfo    `json:"-"`
 	TempSensors     []TempSensor `json:"-"`
 }
@@ -194,6 +197,10 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		dramReadBW = float64(pm.dramReadBytes) / intervalSec / 1e9
 		dramWriteBW = float64(pm.dramWriteBytes) / intervalSec / 1e9
 		dramBWCombined = float64(pm.dramReadBytes+pm.dramWriteBytes) / intervalSec / 1e9
+	}
+	var aneBWGBs float64
+	if intervalSec > 0 {
+		aneBWGBs = float64(pm.aneReadBytes+pm.aneWriteBytes) / intervalSec / 1e9
 	}
 
 	// Convert fan data from C arrays to Go slices
@@ -244,6 +251,7 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		DRAMReadBW:      dramReadBW,
 		DRAMWriteBW:     dramWriteBW,
 		DRAMBWCombined:  dramBWCombined,
+		ANEBWGBs:        aneBWGBs,
 		Fans:            fans,
 		TempSensors:     tempSensors,
 	}

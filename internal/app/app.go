@@ -1051,11 +1051,23 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 		cpuFreqStr,
 		formatTemp(cpuMetrics.CPUTemp),
 	)
-	aneUtil := float64(cpuMetrics.ANEW / 1 / 8.0 * 100)
+	aneUtil := aneUtilizationPercent(cpuMetrics)
+	// Bandwidth mode: the Energy Model ANE channel is dead (all per-block
+	// energy counters read 0 on macOS 27 beta) but AMC byte counters show
+	// real Neural Engine traffic — label with GB/s instead of a bogus 0.0 W.
+	bwMode := cpuMetrics.ANEW <= 0 && cpuMetrics.ANEBW > 0
 	if isCompactLayout() {
-		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeCompact"), cpuMetrics.ANEW)
+		if bwMode {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBWCompact"), cpuMetrics.ANEBW)
+		} else {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeCompact"), cpuMetrics.ANEW)
+		}
 	} else {
-		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGauge"), aneUtil, cpuMetrics.ANEW)
+		if bwMode {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBW"), aneUtil, cpuMetrics.ANEBW)
+		} else {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGauge"), aneUtil, cpuMetrics.ANEW)
+		}
 	}
 	aneGauge.Percent = int(aneUtil)
 }
