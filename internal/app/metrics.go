@@ -103,6 +103,9 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		CPUW:            m.CPUPower,
 		GPUW:            m.GPUPower,
 		ANEW:            m.ANEPower,
+		ANEActive:       m.ANEActive,
+		ANEReadBW:       m.ANEReadBW,
+		ANEWriteBW:      m.ANEWriteBW,
 		DRAMW:           m.DRAMPower,
 		GPUSRAMW:        m.GPUSRAMPower,
 		SystemW:         m.SystemPower,
@@ -119,7 +122,7 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		DRAMReadBW:      m.DRAMReadBW,
 		DRAMWriteBW:     m.DRAMWriteBW,
 		DRAMBWCombined:  m.DRAMBWCombined,
-		ANEBW:           m.ANEBWGBs,
+		ANEBW:           m.ANEBWCombined,
 		Fans:            m.Fans,
 		TempSensors:     m.TempSensors,
 		CoreUsages:      coreUsages,
@@ -143,6 +146,23 @@ const aneBWRefFloorGBs = 4.0
 // "ANE RD/WR" byte counters show traffic, it falls back to a bandwidth-based
 // activity estimate so ANE usage doesn't silently read 0 on newer OSes.
 func aneUtilizationPercent(m CPUMetrics) float64 {
+	// 1. PMP state-residency utilization (macOS 27+/M5): true time-above-
+	//    idle-floor measurement parsed from the ANE-AF-BW / ANE-DCS-BW
+	//    channels — the most accurate signal where it exists. Latch the
+	//    bandwidth-form label: residency flowing while watts read 0 proves
+	//    the energy counter is dead.
+	if m.ANEActive > 0 {
+		if m.ANEW <= 0 {
+			aneBWModeLatched = true
+		}
+		pct := m.ANEActive
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	// 2. Energy Model power estimate (macOS 26 and any OS with working
+	//    per-block energy counters).
 	if m.ANEW > 0 {
 		pct := m.ANEW / aneMaxPowerW * 100
 		if pct > 100 {
@@ -150,6 +170,7 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 		}
 		return pct
 	}
+	// 3. Bandwidth activity estimate (M1-M4 on macOS 27: AMC byte counters).
 	if m.ANEBW > 0 {
 		// ANE traffic with zero watts proves the energy counter is dead (an
 		// idle ANE produces neither). Latch bandwidth mode for the session so
@@ -175,7 +196,7 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 // earlier this session. On OSes with a working energy counter (macOS 26) the
 // latch never trips, so labels behave exactly as before.
 func aneBWLabelMode(m CPUMetrics) bool {
-	return m.ANEW <= 0 && (m.ANEBW > 0 || aneBWModeLatched)
+	return m.ANEW <= 0 && (m.ANEActive > 0 || m.ANEBW > 0 || aneBWModeLatched)
 }
 
 func gpuMetricsFromSoc(m SocMetrics) GPUMetrics {
@@ -519,6 +540,23 @@ func collectMetrics(done chan struct{}, cpumetricsChan chan CPUMetrics, gpumetri
 		avgUsage := averageCPUUsage(coreUsages)
 		cpuMetrics := cpuMetricsFromSoc(m, coreUsages, avgUsage, throttled)
 		gpuMetrics := gpuMetricsFromSoc(m)
+
+		// Compute frequency-adjusted effective GPU load (used by history_soc)
+		if gpuMetrics.FreqMHz > 0 {
+			maxFreq := GetGPUMaxFreqMHz()
+			if maxFreq > 0 {
+				eff := gpuMetrics.ActivePercent * (float64(gpuMetrics.FreqMHz) / float64(maxFreq))
+				if eff > 100 {
+					eff = 100
+				}
+				gpuMetrics.EffectiveLoad = eff
+			} else {
+				gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+			}
+		} else {
+			gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+		}
+
 		tbNetStats := GetThunderboltNetStats()
 		publishPrometheusMetrics(prometheusMetricsSnapshot{
 			SystemInfo:   sysInfo,

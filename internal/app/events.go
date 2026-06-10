@@ -222,7 +222,13 @@ func handleKeyboardEvent(e ui.Event, done chan struct{}) {
 		if !handleFanControlKeys(key) {
 			handleIntervalKeys(key)
 		}
-	case "a", "A", "0", "9", "R":
+	case "a", "A":
+		// In the fan layout 'a' toggles fan auto mode; everywhere else it
+		// jumps to the ANE/BW history layout (press again to switch back).
+		if !handleFanControlKeys(key) {
+			handleLayoutSwitchTo(LayoutHistorySoC)
+		}
+	case "0", "9", "R":
 		handleFanControlKeys(key)
 	case "j", "<Down>":
 		handleInfoFanScroll(1)

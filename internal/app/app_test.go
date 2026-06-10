@@ -236,11 +236,15 @@ func TestSafeFloat64At(t *testing.T) {
 	}
 }
 
-func TestANEUtilizationAndLabelMode(t *testing.T) {
-	// Reset session state
+func resetANETestState(t *testing.T) {
+	t.Helper()
 	origMax, origLatch := maxANEBWSeen, aneBWModeLatched
-	defer func() { maxANEBWSeen, aneBWModeLatched = origMax, origLatch }()
+	t.Cleanup(func() { maxANEBWSeen, aneBWModeLatched = origMax, origLatch })
 	maxANEBWSeen, aneBWModeLatched = 0, false
+}
+
+func TestANEUtilizationAndLabelMode(t *testing.T) {
+	resetANETestState(t)
 
 	// 1. Power path (macOS 26 normal): watts present -> W/8 estimate, W-label.
 	m := CPUMetrics{ANEW: 2.0}
@@ -285,5 +289,32 @@ func TestANEUtilizationAndLabelMode(t *testing.T) {
 	// 6. Power returning (Apple fixes the counters) wins immediately.
 	if aneBWLabelMode(CPUMetrics{ANEW: 0.5, ANEBW: 3.0}) {
 		t.Fatal("working watts must take precedence over latch")
+	}
+
+}
+
+// TestANEResidencyTier covers the PMP state-residency utilization source
+// (macOS 27/M5), which outranks both estimates.
+func TestANEResidencyTier(t *testing.T) {
+	resetANETestState(t)
+
+	// Residency with dead watts: preferred for the percent, latches GB/s label.
+	res := CPUMetrics{ANEActive: 62.5, ANEBW: 9.0}
+	if got := aneUtilizationPercent(res); got != 62.5 {
+		t.Fatalf("residency tier: got %v, want 62.5", got)
+	}
+	if !aneBWModeLatched || !aneBWLabelMode(res) {
+		t.Fatal("residency with dead watts must latch GB/s label")
+	}
+
+	// Residency WITH working watts: residency still preferred for the percent,
+	// but the label stays in watts form (no latch).
+	resetANETestState(t)
+	both := CPUMetrics{ANEActive: 40, ANEW: 1.0}
+	if got := aneUtilizationPercent(both); got != 40 {
+		t.Fatalf("residency+power: got %v, want 40", got)
+	}
+	if aneBWModeLatched || aneBWLabelMode(both) {
+		t.Fatal("working watts must keep the wattage label even with residency")
 	}
 }

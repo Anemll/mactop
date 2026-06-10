@@ -70,6 +70,7 @@ typedef struct {
     double systemPower;
     int gpuFreqMHz;
     double gpuActive;
+    double aneActive;
     double eClusterActive;
     double pClusterActive;
     double sClusterActive;
@@ -158,7 +159,10 @@ type SocMetrics struct {
 	DRAMReadBW      float64      `json:"dram_read_bw_gbs"`
 	DRAMWriteBW     float64      `json:"dram_write_bw_gbs"`
 	DRAMBWCombined  float64      `json:"dram_bw_combined_gbs"`
-	ANEBWGBs        float64      `json:"ane_bw_gbs"`
+	ANEReadBW       float64      `json:"ane_read_bw_gbs"`
+	ANEWriteBW      float64      `json:"ane_write_bw_gbs"`
+	ANEBWCombined   float64      `json:"ane_bw_combined_gbs"`
+	ANEActive       float64      `json:"ane_active"`
 	Fans            []FanInfo    `json:"-"`
 	TempSensors     []TempSensor `json:"-"`
 }
@@ -198,9 +202,14 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		dramWriteBW = float64(pm.dramWriteBytes) / intervalSec / 1e9
 		dramBWCombined = float64(pm.dramReadBytes+pm.dramWriteBytes) / intervalSec / 1e9
 	}
-	var aneBWGBs float64
+	// ANE bandwidth uses the same actual-interval divisor as DRAM BW so the
+	// GB/s is exact regardless of scheduler jitter (the C layer already chose
+	// the best byte source: AMC counters on M1-M4, PMP histograms on M5+).
+	var aneReadBW, aneWriteBW, aneBWCombined float64
 	if intervalSec > 0 {
-		aneBWGBs = float64(pm.aneReadBytes+pm.aneWriteBytes) / intervalSec / 1e9
+		aneReadBW = float64(pm.aneReadBytes) / intervalSec / 1e9
+		aneWriteBW = float64(pm.aneWriteBytes) / intervalSec / 1e9
+		aneBWCombined = float64(pm.aneReadBytes+pm.aneWriteBytes) / intervalSec / 1e9
 	}
 
 	// Detect dead per-block energy counters deterministically, from the very
@@ -266,7 +275,10 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		DRAMReadBW:      dramReadBW,
 		DRAMWriteBW:     dramWriteBW,
 		DRAMBWCombined:  dramBWCombined,
-		ANEBWGBs:        aneBWGBs,
+		ANEReadBW:       aneReadBW,
+		ANEWriteBW:      aneWriteBW,
+		ANEBWCombined:   aneBWCombined,
+		ANEActive:       float64(pm.aneActive),
 		Fans:            fans,
 		TempSensors:     tempSensors,
 	}

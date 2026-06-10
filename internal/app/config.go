@@ -29,6 +29,8 @@ type CustomThemeConfig struct {
 	GPU    string `json:"gpu,omitempty"`    // GPU gauge color (also affects sparkline, history)
 	Memory string `json:"memory,omitempty"` // Memory gauge color (also affects history)
 	ANE    string `json:"ane,omitempty"`    // ANE (Apple Neural Engine) gauge color
+	// Bandwidth controls DRAM bandwidth history chart color (falls back to Memory)
+	Bandwidth string `json:"bandwidth,omitempty"`
 
 	Network     string `json:"network,omitempty"`     // Network & Disk box color (also affects network sparklines)
 	Power       string `json:"power,omitempty"`       // Power chart box color (also affects power sparkline, history)
