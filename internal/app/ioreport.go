@@ -203,6 +203,21 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		aneBWGBs = float64(pm.aneReadBytes+pm.aneWriteBytes) / intervalSec / 1e9
 	}
 
+	// Detect dead per-block energy counters deterministically, from the very
+	// first sample (including the 50 ms seed): on any working OS, CPU and DRAM
+	// energy can never both be exactly zero across a sampling window — the
+	// sampler itself executes on a CPU core during the window (≥25 mJ even on
+	// an E-core at 50 ms) and DRAM refresh alone draws ~0.3 W (≥15 mJ), both
+	// far above the 1 mJ counter resolution. macOS 27 beta zeroes every
+	// per-block Energy Model counter, so this trips on the first frame there
+	// and the ANE gauge defaults to its bandwidth-form label instead of a
+	// meaningless "0.00 W" — no ANE traffic required first, no OS-version
+	// sniffing. A sample with working watts (ANEW > 0) still takes precedence
+	// in the display, so a future fixed OS reverts automatically.
+	if intervalSec >= 0.04 && pm.cpuPower == 0 && pm.dramPower == 0 {
+		aneBWModeLatched = true
+	}
+
 	// Convert fan data from C arrays to Go slices
 	fans := make([]FanInfo, int(pm.fanCount))
 	for i := 0; i < int(pm.fanCount) && i < 8; i++ {
