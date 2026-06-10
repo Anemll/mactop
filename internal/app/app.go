@@ -1639,7 +1639,7 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 		gpuSparklineGroup.Title = fmt.Sprintf(i18n.T("Metrics_GPUSparkline"), int(gpuMetrics.ActivePercent), avgGPU)
 	}
 
-	renderGPUHistoryChart(gpuMetrics, avgGPU)
+	renderGPUHistoryChart(gpuMetrics, avgGPU, effectiveNow)
 
 	// Update gauge colors with dynamic saturation if 1977 theme is active
 	if currentConfig.Theme == "1977" {
@@ -1647,7 +1647,7 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 	}
 }
 
-func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU float64) {
+func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU, effectiveNow float64) {
 	if gpuHistoryChart == nil {
 		return
 	}
@@ -1674,9 +1674,13 @@ func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU float64) {
 		// This is the correct behavior — frequency changes only affect new data points.
 		gpuHistoryChart.Data = [][]float64{visibleEffective}
 		gpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}
+		// Use the same locally-computed effective value that was just pushed
+		// into gpuEffectiveHistory (the plotted line): gpuMetrics.EffectiveLoad
+		// is unset on the seed path and can lag the history's freq source, so
+		// labeling from it can read 0%% while the line shows real load.
 		gpuHistoryChart.Title = fmt.Sprintf("GPU Eff %.0f%% @ %dMHz (Raw %.0f%%, Peak Raw %.0f%%)",
-			gpuMetrics.EffectiveLoad, gpuMetrics.FreqMHz, gpuMetrics.ActivePercent, currentPeak)
-		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("Eff %.0f%%", gpuMetrics.EffectiveLoad)}
+			effectiveNow, gpuMetrics.FreqMHz, gpuMetrics.ActivePercent, currentPeak)
+		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("Eff %.0f%%", effectiveNow)}
 	} else {
 		gpuHistoryChart.Data = [][]float64{visibleRaw}
 		gpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}

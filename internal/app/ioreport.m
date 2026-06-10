@@ -1095,28 +1095,39 @@ int initIOReport() {
               kCFAllocatorDefault, 0,
               &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
           CFDictionarySetValue(anePmp, CFSTR("IOReportChannels"), aneChs);
-          IOReportMergeChannels((CFDictionaryRef)g_channels, anePmp, NULL);
-          CFRelease(anePmp);
 
-          // Re-bind the subscription so the main delta includes the PMP ANE
-          // channels. Release the superseded subscription and the new
-          // subsystem out-param (caller-owned, unused) — safe here because
+          // Merge into a COPY and only publish channels + subscription
+          // together once the new subscription succeeds. Merging g_channels
+          // in place first would leave the dictionary containing ANE entries
+          // that the still-active old subscription never samples if
+          // IOReportCreateSubscription fails — silently dead ANE data with
+          // no retry. Releasing the superseded pair is safe here because
           // initIOReport runs single-threaded, before the background
-          // calibration thread that reads g_subscription exists. (The
-          // runtime re-merge in ensurePMPDramChannels deliberately does NOT
-          // release for that reason.)
-          CFMutableDictionaryRef aneSubsystem = NULL;
-          IOReportSubscriptionRef newSub =
-              IOReportCreateSubscription(NULL, g_channels, &aneSubsystem, 0, NULL);
-          if (newSub != NULL) {
-            if (g_subscription != NULL) {
-              CFRelease(g_subscription);
+          // calibration thread that reads these globals exists. (The runtime
+          // re-merge in ensurePMPDramChannels deliberately does NOT release
+          // for that reason.)
+          CFMutableDictionaryRef aneMerged =
+              CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, g_channels);
+          if (aneMerged != NULL) {
+            IOReportMergeChannels((CFDictionaryRef)aneMerged, anePmp, NULL);
+            CFMutableDictionaryRef aneSubsystem = NULL;
+            IOReportSubscriptionRef newSub =
+                IOReportCreateSubscription(NULL, aneMerged, &aneSubsystem, 0, NULL);
+            if (newSub != NULL) {
+              if (g_subscription != NULL) {
+                CFRelease(g_subscription);
+              }
+              CFRelease(g_channels);
+              g_channels = aneMerged;
+              g_subscription = newSub;
+            } else {
+              CFRelease(aneMerged); // keep the working pre-merge pair
             }
-            g_subscription = newSub;
+            if (aneSubsystem != NULL) {
+              CFRelease(aneSubsystem);
+            }
           }
-          if (aneSubsystem != NULL) {
-            CFRelease(aneSubsystem);
-          }
+          CFRelease(anePmp);
         }
         CFRelease(aneChs);
       }
@@ -2651,6 +2662,17 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int64_t amcAneWriteBytes = 0;
   double cpuTotalEnergyW = 0;
   double cpuTypedEnergyW = 0;
+  // Per-block vs aggregate buckets for GPU/ANE/DRAM energy (mirrors the CPU
+  // naming-generation buckets): if an OS ever exposes a legacy per-block
+  // channel set AND a newer aggregate alias simultaneously, summing both
+  // would double-count. Prefer the per-block sums; use aggregates only when
+  // no per-block channel produced data.
+  double gpuEnergyNamedW = 0;  // exact "GPU Energy"
+  double gpuEnergyAliasW = 0;  // exact "GPU"
+  double aneBlockEnergyW = 0;  // "ANE0_0", "ANE0_1", ... (no "Energy" suffix)
+  double aneNamedEnergyW = 0;  // "ANE Energy"-style aggregates
+  double dramBlockEnergyW = 0; // "DRAM0_0", ...
+  double dramNamedEnergyW = 0; // "DRAM Energy"-style aggregates
   int64_t pmpAneReadBytes = 0;
   int64_t pmpAneWriteBytes = 0;
   bool sawAnePmpActivity = false;  // any positive residency on ANE* PMP channels (macOS 27+)
@@ -2700,19 +2722,31 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         cpuTypedEnergyW += watts;
       } else if (strstr(chn, "CPU Energy") != NULL) {
         cpuTotalEnergyW += watts;
-      } else if (strcmp(chn, "GPU Energy") == 0 || strcmp(chn, "GPU") == 0) {
-        metrics.gpuPower += watts;
+      } else if (strcmp(chn, "GPU Energy") == 0) {
+        gpuEnergyNamedW += watts;
+      } else if (strcmp(chn, "GPU") == 0) {
+        gpuEnergyAliasW += watts;
+      } else if (strncmp(chn, "GPU SRAM", 8) == 0) {
+        metrics.gpuSramPower += watts;
       } else if (strstr(chn, "ANE") != NULL ||
                  strstr(chn, "NPU") != NULL ||
                  strstr(chn, "Neural") != NULL ||
                  strstr(chn, "ane") != NULL) {
         // Broad match in case the ANE power channel name changed on macOS 27/M5
-        // (or moved to a different spelling in Energy Model).
-        metrics.anePower += watts;
+        // (or moved to a different spelling in Energy Model). Aggregate
+        // "Energy"-suffixed aliases are bucketed apart from the per-block
+        // ANE0_0/ANE0_1 counters so coexisting generations don't double count.
+        if (strstr(chn, "Energy") != NULL) {
+          aneNamedEnergyW += watts;
+        } else {
+          aneBlockEnergyW += watts;
+        }
       } else if (strncmp(chn, "DRAM", 4) == 0) {
-        metrics.dramPower += watts;
-      } else if (strncmp(chn, "GPU SRAM", 8) == 0) {
-        metrics.gpuSramPower += watts;
+        if (strstr(chn, "Energy") != NULL) {
+          dramNamedEnergyW += watts;
+        } else {
+          dramBlockEnergyW += watts;
+        }
       }
     } else if (strcmp(grp, "GPU Stats") == 0) {
       CFStringRef subgroupRef = IOReportChannelGetSubGroup(item);
@@ -3103,6 +3137,13 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   // Prefer whole-CPU energy totals; fall back to the sum of cluster-type
   // channels when only those exist (newer chip/OS naming generations).
   metrics.cpuPower = (cpuTotalEnergyW > 0) ? cpuTotalEnergyW : cpuTypedEnergyW;
+  // GPU: "GPU Energy" is the canonical channel; the bare "GPU" alias is used
+  // only when the canonical one produced nothing.
+  metrics.gpuPower += (gpuEnergyNamedW > 0) ? gpuEnergyNamedW : gpuEnergyAliasW;
+  // ANE/DRAM: per-block counters (summed across dies) are canonical; the
+  // aggregate "... Energy" aliases apply only when no block produced data.
+  metrics.anePower += (aneBlockEnergyW > 0) ? aneBlockEnergyW : aneNamedEnergyW;
+  metrics.dramPower += (dramBlockEnergyW > 0) ? dramBlockEnergyW : dramNamedEnergyW;
 
   if (hasAmcExactDcsDirectional) {
     metrics.dramReadBytes = amcExactDcsReadBytes;
