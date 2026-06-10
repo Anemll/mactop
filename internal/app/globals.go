@@ -51,6 +51,9 @@ var (
 	// StepChart widgets for History layout
 	gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart *w.StepChart
 	memBWHistoryChart                                                       *w.StepChart
+	aneHistoryChart, bandwidthHistoryChart                                  *w.StepChart
+	socPowerHistoryChart                                                    *w.StepChart // Multi-line power for history_soc (CPU/GPU/ANE/DRAM)
+	ssdReadHistoryChart                                                     *w.StepChart // Combined SSD read bandwidth history (GB/s)
 	memoryUsedHistory                                                       = make([]float64, 100)
 	swapUsedHistory                                                         = make([]float64, 100)
 	cpuUsageHistory                                                         = make([]float64, 100)
@@ -58,6 +61,30 @@ var (
 	memBWReadHistory                                                        = make([]float64, 100)
 	memBWWriteHistory                                                       = make([]float64, 100)
 	maxMemBWSeen                                                            float64
+	aneUsageHistory                                                         = make([]float64, 100)
+	dramReadHistory                                                         = make([]float64, 100)
+	dramWriteHistory                                                        = make([]float64, 100)
+	aneReadBwHistory                                                        = make([]float64, 100)
+	aneWriteBwHistory                                                       = make([]float64, 100)
+
+	// previousLayout remembers the layout active before a direct switchToLayout
+	// jump (e.g. the 'a' ANE/BW history shortcut), so the key toggles back.
+	previousLayout string
+
+	// Per-component power histories for the SoC history layout (history_soc)
+	cpuPowerHistory, gpuPowerHistory, anePowerHistory, dramPowerHistory = make([]float64, 100), make([]float64, 100), make([]float64, 100), make([]float64, 100)
+
+	// Peak + Average histories for the four SoC usage charts in history_soc layout
+	cpuAvgHistory, gpuAvgHistory, aneAvgHistory, bwAvgHistory     []float64
+	cpuPeakHistory, gpuPeakHistory, anePeakHistory, bwPeakHistory []float64
+
+	// Frequency-adjusted effective GPU load history (for history_soc layout only).
+	// Each sample is recorded with the GPU frequency active at the time it arrived.
+	// This prevents the entire history graph from jumping when frequency changes.
+	gpuEffectiveHistory []float64
+
+	// Additional histories for the split bottom section in history_soc
+	ssdReadHistory []float64 // SSD read bandwidth history in GB/s
 
 	cpuCoreWidget                 *CPUCoreWidget
 	powerValues                   = make([]float64, 35)
