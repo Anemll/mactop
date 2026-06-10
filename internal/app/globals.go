@@ -80,8 +80,7 @@ var (
 	// Per-component power histories for the SoC history layout (history_soc)
 	cpuPowerHistory, gpuPowerHistory, anePowerHistory, dramPowerHistory = make([]float64, 100), make([]float64, 100), make([]float64, 100), make([]float64, 100)
 
-	// Peak + Average histories for the four SoC usage charts in history_soc layout
-	cpuAvgHistory, gpuAvgHistory, aneAvgHistory, bwAvgHistory     []float64
+	// Decaying-peak histories for the four SoC usage charts in history_soc layout
 	cpuPeakHistory, gpuPeakHistory, anePeakHistory, bwPeakHistory []float64
 
 	// Frequency-adjusted effective GPU load history (for history_soc layout only).

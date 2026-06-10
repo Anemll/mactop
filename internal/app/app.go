@@ -134,10 +134,6 @@ func setupUI() {
 	dramPowerHistory = make([]float64, numPoints)
 
 	// Peak + Average for SoC usage histories
-	cpuAvgHistory = make([]float64, numPoints)
-	gpuAvgHistory = make([]float64, numPoints)
-	aneAvgHistory = make([]float64, numPoints)
-	bwAvgHistory = make([]float64, numPoints)
 	cpuPeakHistory = make([]float64, numPoints)
 	gpuPeakHistory = make([]float64, numPoints)
 	anePeakHistory = make([]float64, numPoints)
@@ -991,19 +987,9 @@ func updateCPUHistory(totalUsage float64) {
 	// Update CPU history StepChart (raw value)
 	for i := 0; i < len(cpuUsageHistory)-1; i++ {
 		cpuUsageHistory[i] = cpuUsageHistory[i+1]
-		cpuAvgHistory[i] = cpuAvgHistory[i+1]
 		cpuPeakHistory[i] = cpuPeakHistory[i+1]
 	}
 	cpuUsageHistory[len(cpuUsageHistory)-1] = totalUsage
-
-	// EMA for Average (alpha ~0.15 for reasonable smoothing)
-	alpha := 0.15
-	if len(cpuAvgHistory) > 1 {
-		prevAvg := cpuAvgHistory[len(cpuAvgHistory)-2]
-		cpuAvgHistory[len(cpuAvgHistory)-1] = alpha*totalUsage + (1-alpha)*prevAvg
-	} else {
-		cpuAvgHistory[len(cpuAvgHistory)-1] = totalUsage
-	}
 
 	// Decaying peak (slow decay when below current peak)
 	peakDecay := 0.98
@@ -1108,22 +1094,16 @@ func updateANEHistory(cpuMetrics CPUMetrics) {
 
 	for i := 0; i < len(aneUsageHistory)-1; i++ {
 		aneUsageHistory[i] = aneUsageHistory[i+1]
-		aneAvgHistory[i] = aneAvgHistory[i+1]
 		anePeakHistory[i] = anePeakHistory[i+1]
 	}
 	aneUsageHistory[len(aneUsageHistory)-1] = anePct
 
-	// EMA + decaying Peak for ANE
-	alpha := 0.15
+	// Decaying peak for ANE
 	peakDecay := 0.98
-	if len(aneAvgHistory) > 1 {
-		prevAvg := aneAvgHistory[len(aneAvgHistory)-2]
-		aneAvgHistory[len(aneAvgHistory)-1] = alpha*anePct + (1-alpha)*prevAvg
-
+	if len(anePeakHistory) > 1 {
 		prevPeak := anePeakHistory[len(anePeakHistory)-2]
 		anePeakHistory[len(anePeakHistory)-1] = math.Max(anePct, prevPeak*peakDecay)
 	} else {
-		aneAvgHistory[len(aneAvgHistory)-1] = anePct
 		anePeakHistory[len(anePeakHistory)-1] = anePct
 	}
 
@@ -1195,7 +1175,6 @@ func updateBandwidthHistory(cpuMetrics CPUMetrics) {
 		dramWriteHistory[i] = dramWriteHistory[i+1]
 		aneReadBwHistory[i] = aneReadBwHistory[i+1]
 		aneWriteBwHistory[i] = aneWriteBwHistory[i+1]
-		bwAvgHistory[i] = bwAvgHistory[i+1]
 		bwPeakHistory[i] = bwPeakHistory[i+1]
 	}
 	dramReadHistory[len(dramReadHistory)-1] = readGBs
@@ -1205,17 +1184,12 @@ func updateBandwidthHistory(cpuMetrics CPUMetrics) {
 
 	combined := readGBs + writeGBs
 
-	// EMA + decaying Peak for total Bandwidth
-	alpha := 0.15
+	// Decaying peak for total bandwidth
 	peakDecay := 0.98
-	if len(bwAvgHistory) > 1 {
-		prevAvg := bwAvgHistory[len(bwAvgHistory)-2]
-		bwAvgHistory[len(bwAvgHistory)-1] = alpha*combined + (1-alpha)*prevAvg
-
+	if len(bwPeakHistory) > 1 {
 		prevPeak := bwPeakHistory[len(bwPeakHistory)-2]
 		bwPeakHistory[len(bwPeakHistory)-1] = math.Max(combined, prevPeak*peakDecay)
 	} else {
-		bwAvgHistory[len(bwAvgHistory)-1] = combined
 		bwPeakHistory[len(bwPeakHistory)-1] = combined
 	}
 
@@ -1584,7 +1558,6 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 
 	for i := 0; i < len(gpuValues)-1; i++ {
 		gpuValues[i] = gpuValues[i+1]
-		gpuAvgHistory[i] = gpuAvgHistory[i+1]
 		gpuPeakHistory[i] = gpuPeakHistory[i+1]
 		gpuEffectiveHistory[i] = gpuEffectiveHistory[i+1]
 	}
@@ -1604,17 +1577,12 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 	}
 	gpuEffectiveHistory[len(gpuEffectiveHistory)-1] = effectiveNow
 
-	// EMA Average + decaying Peak for GPU (still based on raw for consistency)
-	alpha := 0.15
+	// Decaying peak for GPU (based on raw load)
 	peakDecay := 0.98
-	if len(gpuAvgHistory) > 1 {
-		prevAvg := gpuAvgHistory[len(gpuAvgHistory)-2]
-		gpuAvgHistory[len(gpuAvgHistory)-1] = alpha*gpuMetrics.ActivePercent + (1-alpha)*prevAvg
-
+	if len(gpuPeakHistory) > 1 {
 		prevPeak := gpuPeakHistory[len(gpuPeakHistory)-2]
 		gpuPeakHistory[len(gpuPeakHistory)-1] = math.Max(gpuMetrics.ActivePercent, prevPeak*peakDecay)
 	} else {
-		gpuAvgHistory[len(gpuAvgHistory)-1] = gpuMetrics.ActivePercent
 		gpuPeakHistory[len(gpuPeakHistory)-1] = gpuMetrics.ActivePercent
 	}
 
