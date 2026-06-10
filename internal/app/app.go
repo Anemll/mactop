@@ -1127,10 +1127,10 @@ func updateANEHistory(cpuMetrics CPUMetrics) {
 		anePeakHistory[len(anePeakHistory)-1] = anePct
 	}
 
-	renderANEHistoryChart(anePct, aneWatts)
+	renderANEHistoryChart(anePct, aneWatts, cpuMetrics.ANEBW, aneBWLabelMode(cpuMetrics))
 }
 
-func renderANEHistoryChart(anePct, aneWatts float64) {
+func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 	if aneHistoryChart == nil {
 		return
 	}
@@ -1166,10 +1166,20 @@ func renderANEHistoryChart(anePct, aneWatts float64) {
 			currentPeak = visiblePeak[len(visiblePeak)-1]
 		}
 		aneHistoryChart.LineColors = []ui.Color{ui.ColorRed} // ANE red in SoC
-		aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2fW)", anePct, currentPeak, aneWatts)
+		if bwMode {
+			// macOS 27+: the ANE energy counter is dead, so a wattage reading
+			// would always be a meaningless 0.00W — show bandwidth instead.
+			aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2f GB/s)", anePct, currentPeak, aneBW)
+		} else {
+			aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2fW)", anePct, currentPeak, aneWatts)
+		}
 	} else {
 		aneHistoryChart.LineColors = []ui.Color{ui.ColorMagenta}
-		aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetail"), anePct, aneWatts)
+		if bwMode {
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetailBW"), anePct, aneBW)
+		} else {
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetail"), anePct, aneWatts)
+		}
 	}
 	aneHistoryChart.MaxVal = scaleMax
 }
@@ -1351,11 +1361,17 @@ func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
 		// (at idle all rails sit near 0 and later series overpaint earlier ones).
 		socPowerHistoryChart.Data = [][]float64{visCPU, visGPU, visDRAM, visANE}
 		socPowerHistoryChart.MaxVal = maxVal * 1.15
+		aneLabel := fmt.Sprintf("ANE:%.1f", cpuMetrics.ANEW)
+		if aneBWLabelMode(cpuMetrics) {
+			// Energy counter dead (macOS 27+): a 0.0W label would assert a
+			// reading that doesn't exist.
+			aneLabel = "ANE:--"
+		}
 		socPowerHistoryChart.DataLabels = []string{
 			fmt.Sprintf("CPU:%.1f", cpuMetrics.CPUW),
 			fmt.Sprintf("GPU:%.1f", cpuMetrics.GPUW+cpuMetrics.GPUSRAMW),
 			fmt.Sprintf("DRAM:%.1f", cpuMetrics.DRAMW),
-			fmt.Sprintf("ANE:%.1f", cpuMetrics.ANEW),
+			aneLabel,
 		}
 		// Reuse the same colors as the usage graphs above; ANE is always red.
 		socPowerHistoryChart.LineColors = []ui.Color{ui.ColorYellow, ui.ColorGreen, ui.ColorCyan, ui.ColorRed}

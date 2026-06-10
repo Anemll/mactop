@@ -315,6 +315,7 @@ Metrics_CPUHistoryDetail = "CPU Usage History (%.1f%%)"
 Metrics_MemoryHistoryDetail = "Mem: %.1f/%.1fGB, Swap: %.1fGB"
 Metrics_MemBWHistoryDetail = "DRAM Bandwidth: %.1f GB/s"
 Metrics_ANEHistoryDetail = "ANE History (%.1f%%, %.2fW)"
+Metrics_ANEHistoryDetailBW = "ANE History (~%.1f%%, %.2f GB/s)"
 Metrics_BandwidthHistoryDetail = "DRAM Bandwidth  R: %.1f  W: %.1f  (Total %.1f GB/s)"
 
 TUI_KillPIDTitle = " CONFIRM KILL PID %d "
