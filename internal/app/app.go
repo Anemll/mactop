@@ -1371,18 +1371,23 @@ func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
 		// (at idle all rails sit near 0 and later series overpaint earlier ones).
 		socPowerHistoryChart.Data = [][]float64{visCPU, visGPU, visDRAM, visANE}
 		socPowerHistoryChart.MaxVal = maxVal * 1.15
-		aneLabel := fmt.Sprintf("ANE:%.1f", cpuMetrics.ANEW)
-		if aneBWLabelMode(cpuMetrics) {
-			// Energy counter dead (macOS 27+): a 0.0W label would assert a
-			// reading that doesn't exist.
-			aneLabel = "ANE:--"
-		}
-		socPowerHistoryChart.DataLabels = []string{
+		// ANE is omitted from the labels and title entirely when its energy
+		// counter is provably dead (macOS 27+) — there is no reading to show.
+		// The (flat) series itself stays plotted so the chart structure is
+		// stable, and the label/segment return automatically if a future OS
+		// build revives the counter (aneBWLabelMode flips off when watts flow).
+		aneDead := aneBWLabelMode(cpuMetrics)
+		labels := []string{
 			fmt.Sprintf("CPU:%.1f", cpuMetrics.CPUW),
 			fmt.Sprintf("GPU:%.1f", cpuMetrics.GPUW+cpuMetrics.GPUSRAMW),
 			fmt.Sprintf("DRAM:%.1f", cpuMetrics.DRAMW),
-			aneLabel,
 		}
+		if !aneDead {
+			// ANE is the last series, so omitting its label leaves the
+			// CPU/GPU/DRAM labels correctly aligned with their series.
+			labels = append(labels, fmt.Sprintf("ANE:%.1f", cpuMetrics.ANEW))
+		}
+		socPowerHistoryChart.DataLabels = labels
 		// Series order: CPU, GPU, DRAM, ANE (ANE last so its red line draws on
 		// top). Resolve per-component custom theme colors when set instead of
 		// clobbering them with hard-coded defaults every tick.
@@ -1396,14 +1401,13 @@ func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
 		socPowerHistoryChart.LineColors = []ui.Color{cpuC, gpuC, memC, ui.ColorRed}
 
 		totalPower := cpuMetrics.CPUW + cpuMetrics.GPUW + cpuMetrics.GPUSRAMW + cpuMetrics.ANEW + cpuMetrics.DRAMW
-		// ANE watts segment: "--" when the energy counter is provably dead
-		// (macOS 27+) so the title doesn't assert a reading that doesn't exist.
-		aneWattsStr := fmt.Sprintf("%.1fW", cpuMetrics.ANEW)
-		if aneBWLabelMode(cpuMetrics) {
-			aneWattsStr = "--"
+		if aneDead {
+			socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetailNoANE"),
+				totalPower, cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
+		} else {
+			socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetail"),
+				totalPower, fmt.Sprintf("%.1fW", cpuMetrics.ANEW), cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
 		}
-		socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetail"),
-			totalPower, aneWattsStr, cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
 	}
 }
 
