@@ -22,6 +22,9 @@ type CPUMetrics struct {
 	ECores, PCores, SCores                                           []int
 	CoreMetrics                                                      map[string]int
 	ANEW, CPUW, GPUW, DRAMW, GPUSRAMW, PackageW, SystemW             float64
+	ANEActive                                                        float64
+	ANEReadBW                                                        float64
+	ANEWriteBW                                                       float64
 	CoreUsages                                                       []float64
 	AvgUsage                                                         float64
 	Throttled                                                        bool
@@ -57,6 +60,7 @@ type NetDiskMetrics struct {
 type GPUMetrics struct {
 	FreqMHz       int
 	ActivePercent float64
+	EffectiveLoad float64 // Frequency-adjusted load: Active% * (current / max)
 	Power         float64
 	Temp          float32
 }

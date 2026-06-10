@@ -278,6 +278,19 @@ func handleLayoutCycle(step int) {
 	renderMutex.Unlock()
 }
 
+// handleLayoutSwitchTo jumps directly to the given layout (toggling back to
+// the previous one when pressed again), mirroring handleLayoutCycle.
+func handleLayoutSwitchTo(layoutName string) {
+	renderMutex.Lock()
+	switchToLayout(layoutName)
+	renderMutex.Unlock()
+	saveConfig()
+	renderMutex.Lock()
+	w, h := ui.TerminalDimensions()
+	drawScreen(w, h)
+	renderMutex.Unlock()
+}
+
 func handleBackgroundCycle(step int) {
 	renderMutex.Lock()
 	cycleBackground(step)

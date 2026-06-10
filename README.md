@@ -38,7 +38,8 @@
 - Proportional per process GPU usage (experimental)
 - Multiple volume display (shows Mac HD + mounted external volumes)
 - Easy-to-read terminal UI
-- **19 Layouts**: (`l` to cycle layouts) — includes a GPU + Memory focused layout with a DRAM read/write bandwidth history chart
+- **20 Layouts**: (`l` to cycle layouts) — includes a GPU + Memory focused layout with a DRAM read/write bandwidth history chart
+  - New `history_soc` layout (`a` to jump to it): four large history StepCharts showing **CPU, GPU, ANE, and DRAM + ANE Bandwidth (Read/Write)** side-by-side, with a compact process list at the bottom. Ideal for observing sustained load, on-device Neural Engine inference, and memory bandwidth behavior over time.
 - **Persistent Settings**: Remembers your Layout and Theme choice across restarts
 - Customizable UI color (green, red, blue, skyblue, magenta, yellow, gold, silver, white, lime, orange, violet, pink, and more) (`c` to cycle colors)
 - Customizable background color (`b` to cycle colors)
@@ -265,6 +266,7 @@ Individual component colors that override the foreground:
 - `gpu`: GPU gauge, GPU sparkline, GPU history chart
 - `memory`: Memory gauge, Memory history chart
 - `ane`: ANE (Apple Neural Engine) gauge
+- `bandwidth`: DRAM Bandwidth history chart (falls back to memory color)
 - `network`: Network box, Network sparklines
 - `power`: Power box, Power sparkline, Power history chart
 - `thunderbolt`: Thunderbolt/RDMA box

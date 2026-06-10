@@ -103,6 +103,9 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		CPUW:            m.CPUPower,
 		GPUW:            m.GPUPower,
 		ANEW:            m.ANEPower,
+		ANEActive:       m.ANEActive,
+		ANEReadBW:       m.ANEReadBW,
+		ANEWriteBW:      m.ANEWriteBW,
 		DRAMW:           m.DRAMPower,
 		GPUSRAMW:        m.GPUSRAMPower,
 		SystemW:         m.SystemPower,
@@ -467,6 +470,23 @@ func collectMetrics(done chan struct{}, cpumetricsChan chan CPUMetrics, gpumetri
 		avgUsage := averageCPUUsage(coreUsages)
 		cpuMetrics := cpuMetricsFromSoc(m, coreUsages, avgUsage, throttled)
 		gpuMetrics := gpuMetricsFromSoc(m)
+
+		// Compute frequency-adjusted effective GPU load (used by history_soc)
+		if gpuMetrics.FreqMHz > 0 {
+			maxFreq := GetGPUMaxFreqMHz()
+			if maxFreq > 0 {
+				eff := gpuMetrics.ActivePercent * (float64(gpuMetrics.FreqMHz) / float64(maxFreq))
+				if eff > 100 {
+					eff = 100
+				}
+				gpuMetrics.EffectiveLoad = eff
+			} else {
+				gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+			}
+		} else {
+			gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+		}
+
 		tbNetStats := GetThunderboltNetStats()
 		publishPrometheusMetrics(prometheusMetricsSnapshot{
 			SystemInfo:   sysInfo,

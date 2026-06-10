@@ -245,6 +245,44 @@ func applyCustomWidgetColors(theme *CustomThemeConfig, fgColor ui.Color) {
 	styleStepChart(memoryHistoryChart, resolveCustomColor(theme.Memory, fgColor))
 	styleStepChart(memBWHistoryChart, resolveCustomColor(theme.Memory, fgColor))
 	styleStepChart(cpuHistoryChart, resolveCustomColor(theme.CPU, fgColor))
+	styleStepChart(aneHistoryChart, resolveCustomColor(theme.ANE, fgColor))
+	bwColor := resolveCustomColor(theme.Bandwidth, fgColor)
+	if bwColor == fgColor {
+		bwColor = resolveCustomColor(theme.Memory, fgColor)
+	}
+	styleStepChart(bandwidthHistoryChart, bwColor)
+	styleStepChart(socPowerHistoryChart, fgColor)
+	styleStepChart(memoryHistoryChart, resolveCustomColor(theme.Memory, fgColor))
+	styleStepChart(ssdReadHistoryChart, ui.ColorCyan)
+
+	// Re-apply distinct line colors for multi-series history charts (styleStepChart forces single color)
+	if memoryHistoryChart != nil {
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			memoryHistoryChart.LineColors = []ui.Color{ui.ColorOrange, ui.ColorMagenta}
+		} else {
+			memColor := resolveCustomColor(theme.Memory, fgColor)
+			memoryHistoryChart.LineColors = []ui.Color{memColor, ui.ColorMagenta}
+		}
+	}
+	if bandwidthHistoryChart != nil {
+		if currentConfig.DefaultLayout != LayoutHistorySoC {
+			bwColor := resolveCustomColor(theme.Bandwidth, fgColor)
+			if bwColor == fgColor {
+				bwColor = resolveCustomColor(theme.Memory, fgColor)
+			}
+			bandwidthHistoryChart.LineColors = []ui.Color{bwColor, ui.ColorYellow}
+		}
+		// In history_soc we set 3 colors (Read blue, Write red, Total violet) in the update function
+	}
+	// Consistent per-block colors for SoC Power History.
+	// Series order matches updateSoCPowerHistory: CPU, GPU, DRAM, ANE —
+	// ANE is drawn last (on top) and stays red regardless of theme.
+	if socPowerHistoryChart != nil {
+		cpuC := resolveCustomColor(theme.CPU, fgColor)
+		gpuC := resolveCustomColor(theme.GPU, fgColor)
+		memC := resolveCustomColor(theme.Memory, fgColor)
+		socPowerHistoryChart.LineColors = []ui.Color{cpuC, gpuC, memC, ui.ColorRed}
+	}
 
 	// Paragraphs
 	styleParagraph(PowerChart, powerColor)
@@ -304,7 +342,7 @@ func applyThemeToSparklines(color ui.Color) {
 }
 
 func applyThemeToStepCharts(color ui.Color) {
-	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart} {
+	for _, sc := range []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart, aneHistoryChart, bandwidthHistoryChart, socPowerHistoryChart, ssdReadHistoryChart} {
 		styleStepChart(sc, color)
 	}
 }
@@ -717,7 +755,7 @@ func applyBackgroundToSparklines(bgColor ui.Color) {
 }
 
 func applyBackgroundToStepCharts(bgColor ui.Color) {
-	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart}
+	stepCharts := []*w.StepChart{gpuHistoryChart, powerHistoryChart, memoryHistoryChart, memBWHistoryChart, cpuHistoryChart, aneHistoryChart, bandwidthHistoryChart, socPowerHistoryChart, ssdReadHistoryChart}
 	for _, sc := range stepCharts {
 		if sc != nil {
 			sc.BackgroundColor = bgColor

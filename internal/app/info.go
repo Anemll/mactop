@@ -53,6 +53,13 @@ func buildInfoLines(themeColor string) []string {
 		avgWatts = sumWatts / float64(countWatts)
 	}
 
+	// Only the direct ANE % parsed from IOReport state residencies
+	// (PMP ANE-AF-BW / ANE-DCS-BW performance floors). No synthetic values.
+	anePct := lastCPUMetrics.ANEActive
+	if anePct < 0 {
+		anePct = 0
+	}
+
 	// Get RDMA status
 	rdmaStatus := CheckRDMAAvailable()
 	rdmaLabel := i18n.T("Info_Disabled")
@@ -90,7 +97,7 @@ func buildInfoLines(themeColor string) []string {
 		"",
 		formatLine(i18n.T("Info_CPUUsage"), fmt.Sprintf("%.2f%%", float64(cpuGauge.Percent))),
 		formatLine(i18n.T("Info_GPUUsage"), fmt.Sprintf("%d%%", int(lastGPUMetrics.ActivePercent))),
-		formatLine(i18n.T("Info_ANEUsage"), fmt.Sprintf("%d%%", int(lastCPUMetrics.ANEW/8.0*100))),
+		formatLine(i18n.T("Info_ANEUsage"), fmt.Sprintf("%d%%", int(anePct))),
 		formatLine(i18n.T("Info_Power"), fmt.Sprintf(i18n.T("Info_PowerValue"), lastCPUMetrics.PackageW, avgWatts)),
 		formatLine(i18n.T("Info_Thermals"), thermalStr),
 		formatLine(i18n.T("Info_Network"), fmt.Sprintf(i18n.T("Info_NetworkValue"), formatBytes(lastNetDiskMetrics.OutBytesPerSec, networkUnit), formatBytes(lastNetDiskMetrics.InBytesPerSec, networkUnit))),
