@@ -235,3 +235,55 @@ func TestSafeFloat64At(t *testing.T) {
 		})
 	}
 }
+
+func TestANEUtilizationAndLabelMode(t *testing.T) {
+	// Reset session state
+	origMax, origLatch := maxANEBWSeen, aneBWModeLatched
+	defer func() { maxANEBWSeen, aneBWModeLatched = origMax, origLatch }()
+	maxANEBWSeen, aneBWModeLatched = 0, false
+
+	// 1. Power path (macOS 26 normal): watts present -> W/8 estimate, W-label.
+	m := CPUMetrics{ANEW: 2.0}
+	if got := aneUtilizationPercent(m); got != 25.0 {
+		t.Fatalf("power path: got %v, want 25", got)
+	}
+	if aneBWLabelMode(m) {
+		t.Fatal("power path must use watts label")
+	}
+	if aneBWModeLatched {
+		t.Fatal("power path must not latch BW mode")
+	}
+
+	// 2. Idle with working power counter (macOS 26 idle): stays in W form.
+	idle := CPUMetrics{}
+	if aneBWLabelMode(idle) {
+		t.Fatal("fresh idle must keep watts label (26-compatible)")
+	}
+
+	// 3. Dead energy counter, traffic flowing (macOS 27): BW estimate + latch.
+	bw := CPUMetrics{ANEBW: 2.0}
+	if got := aneUtilizationPercent(bw); got != 50.0 { // ref floor 4.0
+		t.Fatalf("bw path: got %v, want 50", got)
+	}
+	if !aneBWLabelMode(bw) {
+		t.Fatal("bw path must use GB/s label")
+	}
+
+	// 4. ANE goes idle afterwards: label stays in GB/s form (latched).
+	if !aneBWLabelMode(idle) {
+		t.Fatal("after latch, idle must keep GB/s label")
+	}
+
+	// 5. Adaptive reference: higher BW raises the 100% reference.
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 8.0}); got != 100.0 {
+		t.Fatalf("saturation: got %v, want 100", got)
+	}
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 4.0}); got != 50.0 {
+		t.Fatalf("post-adapt: got %v, want 50 (ref=8)", got)
+	}
+
+	// 6. Power returning (Apple fixes the counters) wins immediately.
+	if aneBWLabelMode(CPUMetrics{ANEW: 0.5, ANEBW: 3.0}) {
+		t.Fatal("working watts must take precedence over latch")
+	}
+}

@@ -1055,7 +1055,9 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 	// Bandwidth mode: the Energy Model ANE channel is dead (all per-block
 	// energy counters read 0 on macOS 27 beta) but AMC byte counters show
 	// real Neural Engine traffic — label with GB/s instead of a bogus 0.0 W.
-	bwMode := cpuMetrics.ANEW <= 0 && cpuMetrics.ANEBW > 0
+	// Session-latched (see aneBWLabelMode) so the label doesn't flip back to
+	// "@ 0.00 W" when the ANE goes idle on an OS whose watts are never nonzero.
+	bwMode := aneBWLabelMode(cpuMetrics)
 	if isCompactLayout() {
 		if bwMode {
 			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBWCompact"), cpuMetrics.ANEBW)

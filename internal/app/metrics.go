@@ -151,6 +151,11 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 		return pct
 	}
 	if m.ANEBW > 0 {
+		// ANE traffic with zero watts proves the energy counter is dead (an
+		// idle ANE produces neither). Latch bandwidth mode for the session so
+		// the UI label stays in GB/s form even when traffic later drops to 0,
+		// instead of reverting to a misleading "@ 0.00 W".
+		aneBWModeLatched = true
 		if m.ANEBW > maxANEBWSeen {
 			maxANEBWSeen = m.ANEBW
 		}
@@ -162,6 +167,15 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 		return pct
 	}
 	return 0
+}
+
+// aneBWLabelMode reports whether ANE displays should use the bandwidth-form
+// label (GB/s) instead of watts. True while the power channel yields nothing
+// and either traffic is currently flowing or bandwidth mode was latched
+// earlier this session. On OSes with a working energy counter (macOS 26) the
+// latch never trips, so labels behave exactly as before.
+func aneBWLabelMode(m CPUMetrics) bool {
+	return m.ANEW <= 0 && (m.ANEBW > 0 || aneBWModeLatched)
 }
 
 func gpuMetricsFromSoc(m SocMetrics) GPUMetrics {
