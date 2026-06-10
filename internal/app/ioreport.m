@@ -2238,14 +2238,24 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   @autoreleasepool {
 
   // Capture wall-clock interval between the two IOReport snapshots so that
-  // DRAM BW (bytes / time) reflects the true measurement window rather than
-  // the requested usleep target (which jitters under scheduling pressure).
+  // DRAM/ANE BW (bytes / time) reflects the true measurement window rather
+  // than the requested usleep target (which jitters under scheduling
+  // pressure).
+  //
+  // Anchor both timestamps AFTER their IOReportCreateSamples call returns.
+  // The kernel snapshots the counters inside the call, so the byte delta
+  // spans roughly snapshot1->snapshot2; taking t1 before the first call adds
+  // that call's full cost (tens to ~100 ms on a large merged channel set) to
+  // the divisor but not to the delta, systematically under-reporting BW by
+  // 10-20% at 1 s intervals (verified against an independent same-window
+  // reader). With both anchors after-return, the post-snapshot overhead
+  // appears in both timestamps and cancels.
   static mach_timebase_info_data_t s_tb = {0, 0};
   if (s_tb.denom == 0) mach_timebase_info(&s_tb);
-  uint64_t t1 = mach_absolute_time();
 
   CFDictionaryRef sample1 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
+  uint64_t t1 = mach_absolute_time();
 
   if (sample1 == NULL)
     return metrics;
