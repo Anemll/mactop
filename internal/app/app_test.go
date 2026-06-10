@@ -238,9 +238,13 @@ func TestSafeFloat64At(t *testing.T) {
 
 func resetANETestState(t *testing.T) {
 	t.Helper()
-	origMax, origLatch := maxANEBWSeen, aneBWModeLatched
-	t.Cleanup(func() { maxANEBWSeen, aneBWModeLatched = origMax, origLatch })
-	maxANEBWSeen, aneBWModeLatched = 0, false
+	origMax, origLatch := maxANEBWSeenBits.Load(), aneBWModeLatched.Load()
+	t.Cleanup(func() {
+		maxANEBWSeenBits.Store(origMax)
+		aneBWModeLatched.Store(origLatch)
+	})
+	maxANEBWSeenBits.Store(0)
+	aneBWModeLatched.Store(false)
 }
 
 func TestANEUtilizationAndLabelMode(t *testing.T) {
@@ -254,7 +258,7 @@ func TestANEUtilizationAndLabelMode(t *testing.T) {
 	if aneBWLabelMode(m) {
 		t.Fatal("power path must use watts label")
 	}
-	if aneBWModeLatched {
+	if aneBWModeLatched.Load() {
 		t.Fatal("power path must not latch BW mode")
 	}
 
@@ -303,7 +307,7 @@ func TestANEResidencyTier(t *testing.T) {
 	if got := aneUtilizationPercent(res); got != 62.5 {
 		t.Fatalf("residency tier: got %v, want 62.5", got)
 	}
-	if !aneBWModeLatched || !aneBWLabelMode(res) {
+	if !aneBWModeLatched.Load() || !aneBWLabelMode(res) {
 		t.Fatal("residency with dead watts must latch GB/s label")
 	}
 
@@ -314,7 +318,7 @@ func TestANEResidencyTier(t *testing.T) {
 	if got := aneUtilizationPercent(both); got != 40 {
 		t.Fatalf("residency+power: got %v, want 40", got)
 	}
-	if aneBWModeLatched || aneBWLabelMode(both) {
+	if aneBWModeLatched.Load() || aneBWLabelMode(both) {
 		t.Fatal("working watts must keep the wattage label even with residency")
 	}
 }

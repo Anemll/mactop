@@ -1623,6 +1623,12 @@ static void printLiveEnergyContributors(int durationMs) {
   CFMutableDictionaryRef subsystem = NULL;
   IOReportSubscriptionRef sub =
       IOReportCreateSubscription(NULL, channels, &subsystem, 0, NULL);
+  // The subsystem out-param is caller-owned and unused — release immediately
+  // so repeated --dump-debug runs don't leak it.
+  if (subsystem != NULL) {
+    CFRelease(subsystem);
+    subsystem = NULL;
+  }
   if (sub == NULL) {
     printf("  Failed to subscribe to Energy Model for live probe\n");
     CFRelease(channels);
@@ -1722,6 +1728,10 @@ static void printLiveEnergyContributors(int durationMs) {
     CFRelease(pmp);
     CFMutableDictionaryRef subSys = NULL;
     IOReportSubscriptionRef pmpSub = IOReportCreateSubscription(NULL, pmpCh, &subSys, 0, NULL);
+    if (subSys != NULL) {
+      CFRelease(subSys); // caller-owned out-param, unused
+      subSys = NULL;
+    }
     if (pmpSub) {
       CFDictionaryRef p1 = IOReportCreateSamples(pmpSub, pmpCh, NULL);
       usleep((useconds_t)durationMs * 1000);

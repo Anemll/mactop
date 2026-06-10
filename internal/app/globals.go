@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ui "github.com/metaspartan/gotui/v5"
@@ -25,7 +26,7 @@ func init() {
 }
 
 var (
-	version                                                     = "v2.1.4"
+	version                                                     = "v2.1.5"
 	cpuGauge, gpuGauge, memoryGauge, aneGauge                   *w.Gauge
 	mainBlock                                                   *ui.Block
 	modelText, PowerChart, NetworkInfo, helpText, infoParagraph *w.Paragraph
@@ -61,13 +62,16 @@ var (
 	memBWReadHistory                                                        = make([]float64, 100)
 	memBWWriteHistory                                                       = make([]float64, 100)
 	maxMemBWSeen                                                            float64
-	maxANEBWSeen                                                            float64
-	aneBWModeLatched                                                        bool
-	aneUsageHistory                                                         = make([]float64, 100)
-	dramReadHistory                                                         = make([]float64, 100)
-	dramWriteHistory                                                        = make([]float64, 100)
-	aneReadBwHistory                                                        = make([]float64, 100)
-	aneWriteBwHistory                                                       = make([]float64, 100)
+	// ANE estimate state shared between the sampler goroutine (latch writes in
+	// sampleSocMetrics) and the UI/menubar/overlay goroutines (reads + adaptive
+	// max updates in aneUtilizationPercent) — atomics to avoid a data race.
+	maxANEBWSeenBits  atomic.Uint64 // float64 bits; monotonic session max
+	aneBWModeLatched  atomic.Bool
+	aneUsageHistory   = make([]float64, 100)
+	dramReadHistory   = make([]float64, 100)
+	dramWriteHistory  = make([]float64, 100)
+	aneReadBwHistory  = make([]float64, 100)
+	aneWriteBwHistory = make([]float64, 100)
 
 	// previousLayout remembers the layout active before a direct switchToLayout
 	// jump (e.g. the 'a' ANE/BW history shortcut), so the key toggles back.

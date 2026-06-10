@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -153,7 +154,7 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 	//    the energy counter is dead.
 	if m.ANEActive > 0 {
 		if m.ANEW <= 0 {
-			aneBWModeLatched = true
+			aneBWModeLatched.Store(true)
 		}
 		pct := m.ANEActive
 		if pct > 100 {
@@ -176,11 +177,18 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 		// idle ANE produces neither). Latch bandwidth mode for the session so
 		// the UI label stays in GB/s form even when traffic later drops to 0,
 		// instead of reverting to a misleading "@ 0.00 W".
-		aneBWModeLatched = true
-		if m.ANEBW > maxANEBWSeen {
-			maxANEBWSeen = m.ANEBW
+		aneBWModeLatched.Store(true)
+		// Monotonic session max via CAS (callers run on several goroutines).
+		for {
+			cur := math.Float64frombits(maxANEBWSeenBits.Load())
+			if m.ANEBW <= cur {
+				break
+			}
+			if maxANEBWSeenBits.CompareAndSwap(math.Float64bits(cur), math.Float64bits(m.ANEBW)) {
+				break
+			}
 		}
-		ref := max(maxANEBWSeen, aneBWRefFloorGBs)
+		ref := max(math.Float64frombits(maxANEBWSeenBits.Load()), aneBWRefFloorGBs)
 		pct := m.ANEBW / ref * 100
 		if pct > 100 {
 			pct = 100
@@ -196,7 +204,7 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 // earlier this session. On OSes with a working energy counter (macOS 26) the
 // latch never trips, so labels behave exactly as before.
 func aneBWLabelMode(m CPUMetrics) bool {
-	return m.ANEW <= 0 && (m.ANEActive > 0 || m.ANEBW > 0 || aneBWModeLatched)
+	return m.ANEW <= 0 && (m.ANEActive > 0 || m.ANEBW > 0 || aneBWModeLatched.Load())
 }
 
 func gpuMetricsFromSoc(m SocMetrics) GPUMetrics {

@@ -224,7 +224,7 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 	// sniffing. A sample with working watts (ANEW > 0) still takes precedence
 	// in the display, so a future fixed OS reverts automatically.
 	if intervalSec >= 0.04 && pm.cpuPower == 0 && pm.dramPower == 0 {
-		aneBWModeLatched = true
+		aneBWModeLatched.Store(true)
 	}
 
 	// Convert fan data from C arrays to Go slices

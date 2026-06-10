@@ -221,13 +221,13 @@ func setupUI() {
 
 	// Multi-component power history for the SoC layout
 	socPowerHistoryChart = w.NewStepChart()
-	socPowerHistoryChart.Title = "SoC Power History (CPU / GPU / ANE / DRAM)"
+	socPowerHistoryChart.Title = i18n.T("TUI_SoCPowerHistory")
 	socPowerHistoryChart.ShowAxes = false
 	socPowerHistoryChart.ShowRightAxis = true
 	socPowerHistoryChart.LineColors = []ui.Color{ui.ColorGreen, ui.ColorBlue, ui.ColorMagenta, ui.ColorYellow}
 
 	ssdReadHistoryChart = w.NewStepChart()
-	ssdReadHistoryChart.Title = "SSD Read (GB/s)"
+	ssdReadHistoryChart.Title = i18n.T("TUI_SSDReadHistory")
 	ssdReadHistoryChart.ShowAxes = false
 	ssdReadHistoryChart.ShowRightAxis = true
 	ssdReadHistoryChart.LineColors = []ui.Color{ui.ColorCyan}
@@ -1380,12 +1380,27 @@ func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
 			fmt.Sprintf("DRAM:%.1f", cpuMetrics.DRAMW),
 			aneLabel,
 		}
-		// Reuse the same colors as the usage graphs above; ANE is always red.
-		socPowerHistoryChart.LineColors = []ui.Color{ui.ColorYellow, ui.ColorGreen, ui.ColorCyan, ui.ColorRed}
+		// Series order: CPU, GPU, DRAM, ANE (ANE last so its red line draws on
+		// top). Resolve per-component custom theme colors when set instead of
+		// clobbering them with hard-coded defaults every tick.
+		cpuC, gpuC, memC := ui.ColorYellow, ui.ColorGreen, ui.ColorCyan
+		if currentConfig.CustomTheme != nil {
+			fg := GetThemeColorWithLightMode(currentConfig.Theme, IsLightMode)
+			cpuC = resolveCustomColor(currentConfig.CustomTheme.CPU, fg)
+			gpuC = resolveCustomColor(currentConfig.CustomTheme.GPU, fg)
+			memC = resolveCustomColor(currentConfig.CustomTheme.Memory, fg)
+		}
+		socPowerHistoryChart.LineColors = []ui.Color{cpuC, gpuC, memC, ui.ColorRed}
 
 		totalPower := cpuMetrics.CPUW + cpuMetrics.GPUW + cpuMetrics.GPUSRAMW + cpuMetrics.ANEW + cpuMetrics.DRAMW
-		socPowerHistoryChart.Title = fmt.Sprintf("SoC Power: Total %.1fW | ANE %.1fW | CPU %.1fW | GPU %.1fW | DRAM %.1fW",
-			totalPower, cpuMetrics.ANEW, cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
+		// ANE watts segment: "--" when the energy counter is provably dead
+		// (macOS 27+) so the title doesn't assert a reading that doesn't exist.
+		aneWattsStr := fmt.Sprintf("%.1fW", cpuMetrics.ANEW)
+		if aneBWLabelMode(cpuMetrics) {
+			aneWattsStr = "--"
+		}
+		socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetail"),
+			totalPower, aneWattsStr, cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
 	}
 }
 
@@ -1742,7 +1757,7 @@ func updateNetDiskUI(netdiskMetrics NetDiskMetrics) {
 
 		ssdReadHistoryChart.Data = [][]float64{visibleData}
 		ssdReadHistoryChart.MaxVal = maxVal * 1.3
-		ssdReadHistoryChart.Title = fmt.Sprintf("SSD Read %.2f GB/s (Peak %.2f)", readGBs, maxVal)
+		ssdReadHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SSDReadDetail"), readGBs, maxVal)
 	}
 
 	var sb strings.Builder

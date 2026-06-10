@@ -285,7 +285,6 @@ func applyCustomWidgetColors(theme *CustomThemeConfig, fgColor ui.Color) {
 	}
 	styleStepChart(bandwidthHistoryChart, bwColor)
 	styleStepChart(socPowerHistoryChart, fgColor)
-	styleStepChart(memoryHistoryChart, resolveCustomColor(theme.Memory, fgColor))
 	styleStepChart(ssdReadHistoryChart, ui.ColorCyan)
 
 	applyMultiSeriesChartColors(theme, fgColor)
