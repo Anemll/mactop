@@ -1505,24 +1505,37 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 func updatePowerChartText(cpuMetrics CPUMetrics, thermalStr string) {
 	PowerChart.Title = i18n.T("TUI_PowerUsage")
 
+	// When the ANE energy counter is dead (macOS 27+), a wattage reading
+	// would always be a meaningless 0.00 W — show fabric bandwidth instead,
+	// matching the ANE gauge.
+	bwMode := aneBWLabelMode(cpuMetrics)
+
 	if isCompactLayout() {
+		aneStr := fmt.Sprintf("%.1fW", cpuMetrics.ANEW)
+		if bwMode {
+			aneStr = fmt.Sprintf("%.1fGB/s", cpuMetrics.ANEBW)
+		}
 		PowerChart.Title = i18n.T("Metrics_PowerChartTitleCompact")
 		PowerChart.Text = fmt.Sprintf(i18n.T("Metrics_PowerChartTextCompact"),
 			cpuMetrics.CPUW,
 			cpuMetrics.GPUW+cpuMetrics.GPUSRAMW,
-			cpuMetrics.ANEW,
+			aneStr,
 			cpuMetrics.DRAMW,
 			cpuMetrics.PackageW,
 			thermalStr,
 		)
 	} else {
+		aneStr := fmt.Sprintf("%.2f W", cpuMetrics.ANEW)
+		if bwMode {
+			aneStr = fmt.Sprintf("%.2f GB/s", cpuMetrics.ANEBW)
+		}
 		uptimeSeconds, _ := GetNativeUptime()
 		uptimeStr := formatTime(float64(uptimeSeconds))
 
 		PowerChart.Text = fmt.Sprintf(i18n.T("Metrics_PowerChartText"),
 			cpuMetrics.CPUW,
 			cpuMetrics.GPUW+cpuMetrics.GPUSRAMW,
-			cpuMetrics.ANEW,
+			aneStr,
 			cpuMetrics.DRAMW,
 			cpuMetrics.SystemW,
 			cpuMetrics.PackageW,
