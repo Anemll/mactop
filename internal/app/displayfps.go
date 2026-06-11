@@ -8,6 +8,7 @@ package app
 
 int startDisplayFPSCounter(void);
 void stopDisplayFPSCounter(void);
+int hasScreenRecordingAccess(void);
 unsigned int getDisplayFPS(void);
 unsigned int getDisplayFrameIntervalUs(void);
 void dumpDisplayFPSDiagnostics(void);
@@ -30,6 +31,12 @@ func StartDisplayFPSCounter() bool {
 // StopDisplayFPSCounter tears down the FPS counter and releases resources.
 func StopDisplayFPSCounter() {
 	C.stopDisplayFPSCounter()
+}
+
+// HasScreenRecordingAccess reports whether Screen Recording permission is
+// already granted, without triggering the system permission prompt.
+func HasScreenRecordingAccess() bool {
+	return C.hasScreenRecordingAccess() == 1
 }
 
 // GetDisplayFPSMetrics returns the current display FPS and frame interval.
