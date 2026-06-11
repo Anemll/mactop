@@ -1184,13 +1184,17 @@ func updateBandwidthHistory(cpuMetrics CPUMetrics) {
 
 	combined := readGBs + writeGBs
 
-	// Decaying peak for total bandwidth
+	// Decaying peak across the plotted series: DRAM total and the ANE fabric
+	// pair. ANE traffic is normally a subset of DRAM total, but stalled DCS
+	// counters (macOS 27 beta) can report DRAM 0 while ANE histograms still
+	// flow — the peak label must bound whatever is actually drawn.
+	peakInput := math.Max(combined, math.Max(aneReadGBs, aneWriteGBs))
 	peakDecay := 0.98
 	if len(bwPeakHistory) > 1 {
 		prevPeak := bwPeakHistory[len(bwPeakHistory)-2]
-		bwPeakHistory[len(bwPeakHistory)-1] = math.Max(combined, prevPeak*peakDecay)
+		bwPeakHistory[len(bwPeakHistory)-1] = math.Max(peakInput, prevPeak*peakDecay)
 	} else {
-		bwPeakHistory[len(bwPeakHistory)-1] = combined
+		bwPeakHistory[len(bwPeakHistory)-1] = peakInput
 	}
 
 	renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs)
