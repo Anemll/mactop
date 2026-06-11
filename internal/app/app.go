@@ -1033,7 +1033,7 @@ func updateCPUHistory(totalUsage float64) {
 				}
 				cpuHistoryChart.Data = [][]float64{visibleRaw}
 				cpuHistoryChart.LineColors = []ui.Color{ui.ColorYellow} // CPU color for SoC
-				cpuHistoryChart.Title = fmt.Sprintf("CPU %.0f%% (Peak %.0f%%)", totalUsage, currentPeak)
+				cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryPeak"), totalUsage, currentPeak)
 				cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
 			} else {
 				cpuHistoryChart.Data = [][]float64{visibleRaw}
@@ -1149,9 +1149,9 @@ func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 		if bwMode {
 			// macOS 27+: the ANE energy counter is dead, so a wattage reading
 			// would always be a meaningless 0.00W — show bandwidth instead.
-			aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2f GB/s)", anePct, currentPeak, aneBW)
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryPeakBW"), anePct, currentPeak, aneBW)
 		} else {
-			aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2fW)", anePct, currentPeak, aneWatts)
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryPeak"), anePct, currentPeak, aneWatts)
 		}
 	} else {
 		aneHistoryChart.LineColors = []ui.Color{ui.ColorMagenta}
@@ -1269,7 +1269,7 @@ func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs floa
 			bandwidthHistoryChart.Data = [][]float64{visibleTotal, visibleRead, visibleWrite, visibleAneRead, visibleAneWrite}
 			bandwidthHistoryChart.LineColors = []ui.Color{ui.ColorMagenta, ui.ColorBlue, ui.ColorRed, ui.ColorGreen, ui.ColorYellow}
 			total := readGBs + writeGBs
-			bandwidthHistoryChart.Title = fmt.Sprintf("DRAM R:%.1f W:%.1f  ANE R:%.1f W:%.1f GB/s (Peak %.1f)", readGBs, writeGBs, aneReadGBs, aneWriteGBs, currentPeak)
+			bandwidthHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_BandwidthHistoryPeak"), readGBs, writeGBs, aneReadGBs, aneWriteGBs, currentPeak)
 			bandwidthHistoryChart.DataLabels = []string{
 				fmt.Sprintf("Tot:%.1f", total),
 				fmt.Sprintf("R:%.1f", readGBs),
@@ -1650,7 +1650,7 @@ func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU, effectiveNow float64) 
 		// into gpuEffectiveHistory (the plotted line): gpuMetrics.EffectiveLoad
 		// is unset on the seed path and can lag the history's freq source, so
 		// labeling from it can read 0%% while the line shows real load.
-		gpuHistoryChart.Title = fmt.Sprintf("GPU Eff %.0f%% @ %dMHz (Raw %.0f%%, Peak Raw %.0f%%)",
+		gpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_GPUHistoryEff"),
 			effectiveNow, gpuMetrics.FreqMHz, gpuMetrics.ActivePercent, currentPeak)
 		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("Eff %.0f%%", effectiveNow)}
 	} else {
