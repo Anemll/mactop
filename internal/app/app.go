@@ -1243,7 +1243,20 @@ func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs floa
 		// Scale to the drawn series only: bwPeakHistory decays slowly and is
 		// not rendered, so including it would pin the Y-axis high long after a
 		// spike and flatten the live lines.
-		scaleMax := bandwidthScaleMax(visibleRead, visibleWrite, visibleAneRead, visibleAneWrite)
+		scaleSeries := [][]float64{visibleRead, visibleWrite, visibleAneRead, visibleAneWrite}
+
+		// history_soc also draws a combined Read+Write total line — it must
+		// participate in scaling or it clips against the chart top whenever
+		// read and write are both high in the same sample.
+		var visibleTotal []float64
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			visibleTotal = make([]float64, len(visibleRead))
+			for i := range visibleRead {
+				visibleTotal[i] = visibleRead[i] + visibleWrite[i]
+			}
+			scaleSeries = append(scaleSeries, visibleTotal)
+		}
+		scaleMax := bandwidthScaleMax(scaleSeries...)
 
 		// In history_soc layout, force a minimum visible scale so the graph
 		// doesn't look completely dead when bandwidth is low (common even with high GPU/ANE load)
@@ -1255,12 +1268,6 @@ func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs floa
 			currentPeak := 0.0
 			if len(visiblePeak) > 0 {
 				currentPeak = visiblePeak[len(visiblePeak)-1]
-			}
-
-			// For history_soc: show Read (blue), Write (red), Total (violet)
-			visibleTotal := make([]float64, len(visibleRead))
-			for i := range visibleRead {
-				visibleTotal[i] = visibleRead[i] + visibleWrite[i]
 			}
 
 			// To make Write (red) visible on top:
