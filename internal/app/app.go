@@ -972,8 +972,11 @@ func updateCPUUI(cpuMetrics CPUMetrics) {
 	updateMemoryHistory(memoryMetrics)
 
 	// New SoC history charts (for history_soc layout)
-	updateANEHistory(cpuMetrics)
+	// Bandwidth first: the ANE history chart derives its bandwidth-mode
+	// series from aneRead/WriteBwHistory, so they must hold this tick's
+	// values before renderANEHistoryChart runs.
 	updateBandwidthHistory(cpuMetrics)
+	updateANEHistory(cpuMetrics)
 	updateSoCPowerHistory(cpuMetrics)
 
 	if len(cpuMetrics.CoreUsages) > 0 {
@@ -1110,6 +1113,41 @@ func updateANEHistory(cpuMetrics CPUMetrics) {
 	renderANEHistoryChart(anePct, aneWatts, cpuMetrics.ANEBW, aneBWLabelMode(cpuMetrics))
 }
 
+// aneVisibleSeries returns the plotted ANE utilization window. In bandwidth
+// mode the percentages are derived at render time from the stored physical
+// GB/s histories against the *current* adaptive reference: stored percentages
+// were computed against whatever reference existed when each was pushed, so
+// after the reference ratchets (e.g. during a load ramp) they stop being
+// comparable — a 7x bandwidth ramp would paint as a flat 100% plateau.
+func aneVisibleSeries(visibleWidth int, bwMode bool) []float64 {
+	if !bwMode {
+		return aneUsageHistory[len(aneUsageHistory)-visibleWidth:]
+	}
+	ref := max(math.Float64frombits(maxANEBWSeenBits.Load()), aneBWRefFloorGBs)
+	rd := aneReadBwHistory[len(aneReadBwHistory)-visibleWidth:]
+	wr := aneWriteBwHistory[len(aneWriteBwHistory)-visibleWidth:]
+	out := make([]float64, visibleWidth)
+	for i := range out {
+		pct := (rd[i] + wr[i]) / ref * 100
+		if pct > 100 {
+			pct = 100
+		}
+		out[i] = pct
+	}
+	return out
+}
+
+// seriesMax returns the largest value in the series (0 for an empty one).
+func seriesMax(series []float64) float64 {
+	peak := 0.0
+	for _, v := range series {
+		if v > peak {
+			peak = v
+		}
+	}
+	return peak
+}
+
 func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 	if aneHistoryChart == nil {
 		return
@@ -1122,7 +1160,7 @@ func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 	if visibleWidth <= 0 {
 		return
 	}
-	visibleRaw := aneUsageHistory[len(aneUsageHistory)-visibleWidth:]
+	visibleRaw := aneVisibleSeries(visibleWidth, bwMode)
 	visiblePeak := anePeakHistory[len(anePeakHistory)-visibleWidth:]
 
 	maxVal := 0.0
@@ -1141,8 +1179,15 @@ func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 	aneHistoryChart.Data = [][]float64{visibleRaw}
 	aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
 	if currentConfig.DefaultLayout == LayoutHistorySoC {
+		// Peak: in bandwidth mode use the max of the visible window — ANE
+		// load is typically flat at saturation, so the decaying tracker
+		// collapses to the current value within two ticks and the label
+		// degenerates to "Peak == current". In watts/residency modes keep
+		// the decaying tracker, consistent with the CPU/GPU charts.
 		currentPeak := 0.0
-		if len(visiblePeak) > 0 {
+		if bwMode {
+			currentPeak = seriesMax(visibleRaw)
+		} else if len(visiblePeak) > 0 {
 			currentPeak = visiblePeak[len(visiblePeak)-1]
 		}
 		aneHistoryChart.LineColors = []ui.Color{ui.ColorRed} // ANE red in SoC

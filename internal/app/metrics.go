@@ -179,9 +179,14 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 		// instead of reverting to a misleading "@ 0.00 W".
 		aneBWModeLatched.Store(true)
 		// Monotonic session max via CAS (callers run on several goroutines).
+		// 3% ratchet hysteresis: a single burst-aligned sample window
+		// marginally above the sustained plateau would otherwise become the
+		// permanent 100% reference, pinning genuine saturation at a
+		// misleading 96-98%. Bursts within 3% read as 100% via the clamp
+		// below; real step-ups beyond 3% still re-scale the reference.
 		for {
 			cur := math.Float64frombits(maxANEBWSeenBits.Load())
-			if m.ANEBW <= cur {
+			if m.ANEBW <= cur*1.03 {
 				break
 			}
 			if maxANEBWSeenBits.CompareAndSwap(math.Float64bits(cur), math.Float64bits(m.ANEBW)) {

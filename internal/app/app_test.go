@@ -297,6 +297,33 @@ func TestANEUtilizationAndLabelMode(t *testing.T) {
 
 }
 
+func TestANERefHysteresis(t *testing.T) {
+	resetANETestState(t)
+
+	// Establish a reference above the floor.
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 8.0}); got != 100.0 {
+		t.Fatalf("establish ref: got %v, want 100", got)
+	}
+
+	// A burst within 3% of the reference reads 100% (clamp) but must NOT
+	// ratchet — sustained saturation would otherwise read 96-98% forever
+	// against its own burst noise.
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 8.2}); got != 100.0 {
+		t.Fatalf("sub-hysteresis burst: got %v, want 100", got)
+	}
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 4.0}); got != 50.0 {
+		t.Fatalf("ref must still be 8 after sub-hysteresis burst: got %v, want 50", got)
+	}
+
+	// A genuine step-up beyond 3% still re-scales the reference.
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 8.5}); got != 100.0 {
+		t.Fatalf("step-up: got %v, want 100", got)
+	}
+	if got := aneUtilizationPercent(CPUMetrics{ANEBW: 4.25}); got != 50.0 {
+		t.Fatalf("post-step ref must be 8.5: got %v, want 50", got)
+	}
+}
+
 // TestANEResidencyTier covers the PMP state-residency utilization source
 // (macOS 27/M5), which outranks both estimates.
 func TestANEResidencyTier(t *testing.T) {
