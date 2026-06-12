@@ -293,9 +293,7 @@ func updateMainTitleWithHardware() {
 		ramStr = fmt.Sprintf(" • %d GB", ramGB)
 	}
 
-	aneStr := " • ANE"
-
-	mainBlock.Title = fmt.Sprintf(" mactop  •  %s  •  %s%s%s%s ", model, cpuStr, gpuStr, ramStr, aneStr)
+	mainBlock.Title = fmt.Sprintf(" mactop  •  %s  •  %s%s%s ", model, cpuStr, gpuStr, ramStr)
 }
 
 func updateModelText() {
