@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	ui "github.com/metaspartan/gotui/v5"
@@ -83,7 +84,7 @@ type MemoryMetrics struct {
 }
 
 type EventThrottler struct {
-	timer       *time.Timer
+	pending     atomic.Bool
 	gracePeriod time.Duration
 	C           chan struct{}
 }
@@ -99,7 +100,6 @@ type CPUCoreWidget struct {
 
 func NewEventThrottler(gracePeriod time.Duration) *EventThrottler {
 	return &EventThrottler{
-		timer:       nil,
 		gracePeriod: gracePeriod,
 		C:           make(chan struct{}, 1),
 	}
@@ -115,12 +115,17 @@ func NewCPUMetrics() CPUMetrics {
 }
 
 func (e *EventThrottler) Notify() {
-	if e.timer != nil {
+	// CAS so only one grace window can be armed at a time: the previous
+	// unsynchronized timer-pointer check raced with the callback goroutine
+	// (caught by go test -race) and could double-arm on concurrent first
+	// notifications. Clearing pending before the send preserves the old
+	// ordering: a Notify arriving between the two re-arms a fresh window.
+	if !e.pending.CompareAndSwap(false, true) {
 		return
 	}
 
-	e.timer = time.AfterFunc(e.gracePeriod, func() {
-		e.timer = nil
+	time.AfterFunc(e.gracePeriod, func() {
+		e.pending.Store(false)
 		select {
 		case e.C <- struct{}{}:
 		default:
