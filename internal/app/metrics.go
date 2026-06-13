@@ -153,6 +153,11 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 	//    bandwidth-form label: residency flowing while watts read 0 proves
 	//    the energy counter is dead.
 	if m.ANEActive > 0 {
+		// This machine has a live PMP residency signal (M5-class). Latch it so
+		// the history chart plots stored residency percentages as-is rather
+		// than re-deriving them from bandwidth (which is a different quantity
+		// and would diverge from this gauge).
+		aneResidencyLatched.Store(true)
 		if m.ANEW <= 0 {
 			aneBWModeLatched.Store(true)
 		}

@@ -1118,7 +1118,13 @@ func updateANEHistory(cpuMetrics CPUMetrics) {
 // after the reference ratchets (e.g. during a load ramp) they stop being
 // comparable — a 7x bandwidth ramp would paint as a flat 100% plateau.
 func aneVisibleSeries(visibleWidth int, bwMode bool) []float64 {
-	if !bwMode {
+	// Re-derive from physical bandwidth only for the tier-3 adaptive-bandwidth
+	// estimate (M1-M4 on macOS 27), whose stored percentages go stale as the
+	// reference ratchets. Residency (tier 1, M5) and power (tier 2, macOS 26)
+	// percentages are against a fixed scale and stay comparable across ticks,
+	// so plot them as stored — re-deriving residency from bandwidth would
+	// diverge from the gauge, which reads the residency tier.
+	if !bwMode || aneResidencyLatched.Load() {
 		return aneUsageHistory[len(aneUsageHistory)-visibleWidth:]
 	}
 	ref := max(math.Float64frombits(maxANEBWSeenBits.Load()), aneBWRefFloorGBs)

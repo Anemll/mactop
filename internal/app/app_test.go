@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -238,13 +239,15 @@ func TestSafeFloat64At(t *testing.T) {
 
 func resetANETestState(t *testing.T) {
 	t.Helper()
-	origMax, origLatch := maxANEBWSeenBits.Load(), aneBWModeLatched.Load()
+	origMax, origLatch, origResidency := maxANEBWSeenBits.Load(), aneBWModeLatched.Load(), aneResidencyLatched.Load()
 	t.Cleanup(func() {
 		maxANEBWSeenBits.Store(origMax)
 		aneBWModeLatched.Store(origLatch)
+		aneResidencyLatched.Store(origResidency)
 	})
 	maxANEBWSeenBits.Store(0)
 	aneBWModeLatched.Store(false)
+	aneResidencyLatched.Store(false)
 }
 
 func TestANEUtilizationAndLabelMode(t *testing.T) {
@@ -297,6 +300,48 @@ func TestANEUtilizationAndLabelMode(t *testing.T) {
 
 }
 
+// TestANEVisibleSeries verifies the history-line source selection across the
+// three tiers, in particular that the M5 residency path is NOT re-derived from
+// bandwidth (the regression this guards).
+func TestANEVisibleSeries(t *testing.T) {
+	resetANETestState(t)
+
+	// Save and restore the shared history buffers we mutate.
+	origUsage := append([]float64(nil), aneUsageHistory...)
+	origRd := append([]float64(nil), aneReadBwHistory...)
+	origWr := append([]float64(nil), aneWriteBwHistory...)
+	t.Cleanup(func() {
+		copy(aneUsageHistory, origUsage)
+		copy(aneReadBwHistory, origRd)
+		copy(aneWriteBwHistory, origWr)
+	})
+
+	n := len(aneUsageHistory)
+	for i := range aneUsageHistory {
+		aneUsageHistory[i] = 30 // stored utilization (residency or power)
+		aneReadBwHistory[i] = 6 // 6+2 = 8 GB/s combined
+		aneWriteBwHistory[i] = 2
+	}
+	maxANEBWSeenBits.Store(math.Float64bits(16)) // ref = 16 -> 8/16 = 50%
+
+	// Tier 2 (macOS 26, watts): not bwMode -> plot stored 30%.
+	if got := aneVisibleSeries(n, false); got[n-1] != 30 {
+		t.Fatalf("watts tier: plotted %v, want stored 30", got[n-1])
+	}
+
+	// Tier 3 (M1-M4 macOS 27): bwMode, no residency -> re-derive 8/16 = 50%.
+	if got := aneVisibleSeries(n, true); got[n-1] != 50 {
+		t.Fatalf("bandwidth tier: plotted %v, want derived 50", got[n-1])
+	}
+
+	// Tier 1 (M5 macOS 27): bwMode AND residency latched -> plot stored 30%,
+	// NOT the 50% bandwidth derivation (must match the residency gauge).
+	aneResidencyLatched.Store(true)
+	if got := aneVisibleSeries(n, true); got[n-1] != 30 {
+		t.Fatalf("residency tier: plotted %v, want stored 30 (gauge consistency)", got[n-1])
+	}
+}
+
 func TestANERefHysteresis(t *testing.T) {
 	resetANETestState(t)
 
@@ -336,6 +381,11 @@ func TestANEResidencyTier(t *testing.T) {
 	}
 	if !aneBWModeLatched.Load() || !aneBWLabelMode(res) {
 		t.Fatal("residency with dead watts must latch GB/s label")
+	}
+	// The residency latch keeps the history chart on stored residency
+	// percentages instead of re-deriving them from bandwidth (M5 path).
+	if !aneResidencyLatched.Load() {
+		t.Fatal("residency tier must latch the residency flag")
 	}
 
 	// Residency WITH working watts: residency still preferred for the percent,
