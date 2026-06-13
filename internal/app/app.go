@@ -1797,19 +1797,18 @@ func updateNetDiskUI(netdiskMetrics NetDiskMetrics) {
 		}
 		visibleData := ssdReadHistory[len(ssdReadHistory)-visibleWidth:]
 
-		maxVal := 0.0
-		for _, v := range visibleData {
-			if v > maxVal {
-				maxVal = v
-			}
-		}
-		if maxVal < 0.5 {
-			maxVal = 0.5
+		// True observed peak for the title; a separate floored value for the
+		// Y-axis so an idle chart still has visible height without the title
+		// claiming a 0.50 GB/s peak that never occurred.
+		peak := seriesMax(visibleData)
+		scaleMax := peak
+		if scaleMax < 0.5 {
+			scaleMax = 0.5
 		}
 
 		ssdReadHistoryChart.Data = [][]float64{visibleData}
-		ssdReadHistoryChart.MaxVal = maxVal * 1.3
-		ssdReadHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SSDReadDetail"), readGBs, maxVal)
+		ssdReadHistoryChart.MaxVal = scaleMax * 1.3
+		ssdReadHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SSDReadDetail"), readGBs, peak)
 	}
 
 	var sb strings.Builder
