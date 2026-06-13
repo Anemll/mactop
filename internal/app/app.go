@@ -1033,12 +1033,12 @@ func updateCPUHistory(totalUsage float64) {
 					currentPeak = visiblePeak[len(visiblePeak)-1]
 				}
 				cpuHistoryChart.Data = [][]float64{visibleRaw}
-				cpuHistoryChart.LineColors = []ui.Color{ui.ColorYellow} // CPU color for SoC
+				cpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.CPU }, ui.ColorYellow)} // CPU color for SoC
 				cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryPeak"), totalUsage, currentPeak)
 				cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
 			} else {
 				cpuHistoryChart.Data = [][]float64{visibleRaw}
-				cpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}
+				cpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.CPU }, ui.ColorGreen)}
 				cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryDetail"), totalUsage)
 				cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
 			}
@@ -1141,6 +1141,18 @@ func aneVisibleSeries(visibleWidth int, bwMode bool) []float64 {
 	return out
 }
 
+// historyLineColor returns the active custom-theme color for a history chart
+// component, or the fallback default when no custom theme is set. Per-tick
+// LineColors assignments must route through this so they don't clobber the
+// colors applyCustomWidgetColors applied (same pattern as updateSoCPowerHistory).
+func historyLineColor(pick func(*CustomThemeConfig) string, fallback ui.Color) ui.Color {
+	if currentConfig.CustomTheme == nil {
+		return fallback
+	}
+	fg := GetThemeColorWithLightMode(currentConfig.Theme, IsLightMode)
+	return resolveCustomColor(pick(currentConfig.CustomTheme), fg)
+}
+
 // seriesMax returns the largest value in the series (0 for an empty one).
 func seriesMax(series []float64) float64 {
 	peak := 0.0
@@ -1194,7 +1206,7 @@ func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 		} else if len(visiblePeak) > 0 {
 			currentPeak = visiblePeak[len(visiblePeak)-1]
 		}
-		aneHistoryChart.LineColors = []ui.Color{ui.ColorRed} // ANE red in SoC
+		aneHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.ANE }, ui.ColorRed)} // ANE red in SoC
 		if bwMode {
 			// macOS 27+: the ANE energy counter is dead, so a wattage reading
 			// would always be a meaningless 0.00W — show bandwidth instead.
@@ -1203,7 +1215,7 @@ func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
 			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryPeak"), anePct, currentPeak, aneWatts)
 		}
 	} else {
-		aneHistoryChart.LineColors = []ui.Color{ui.ColorMagenta}
+		aneHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.ANE }, ui.ColorMagenta)}
 		if bwMode {
 			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetailBW"), anePct, aneBW)
 		} else {
@@ -1714,7 +1726,7 @@ func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU, effectiveNow float64) 
 		// Use the pre-recorded effective history (each point scaled with the freq at the time it was sampled).
 		// This is the correct behavior — frequency changes only affect new data points.
 		gpuHistoryChart.Data = [][]float64{visibleEffective}
-		gpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}
+		gpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.GPU }, ui.ColorGreen)}
 		// Use the same locally-computed effective value that was just pushed
 		// into gpuEffectiveHistory (the plotted line): gpuMetrics.EffectiveLoad
 		// is unset on the seed path and can lag the history's freq source, so
@@ -1724,7 +1736,7 @@ func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU, effectiveNow float64) 
 		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("Eff %.0f%%", effectiveNow)}
 	} else {
 		gpuHistoryChart.Data = [][]float64{visibleRaw}
-		gpuHistoryChart.LineColors = []ui.Color{ui.ColorGreen}
+		gpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.GPU }, ui.ColorGreen)}
 		gpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_GPUHistoryChart"), avgGPU)
 		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", gpuMetrics.ActivePercent)}
 	}

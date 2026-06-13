@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	ui "github.com/metaspartan/gotui/v5"
 )
 
 func TestFormatBytes(t *testing.T) {
@@ -339,6 +341,38 @@ func TestANEVisibleSeries(t *testing.T) {
 	aneResidencyLatched.Store(true)
 	if got := aneVisibleSeries(n, true); got[n-1] != 30 {
 		t.Fatalf("residency tier: plotted %v, want stored 30 (gauge consistency)", got[n-1])
+	}
+}
+
+// TestHistoryLineColor verifies the per-tick history-chart color resolution
+// honors a custom theme (so live updates don't clobber applyCustomWidgetColors)
+// and falls back to the default when no custom theme is set.
+func TestHistoryLineColor(t *testing.T) {
+	origConfig := currentConfig
+	t.Cleanup(func() { currentConfig = origConfig })
+	pickCPU := func(tc *CustomThemeConfig) string { return tc.CPU }
+
+	// No custom theme -> the hardcoded fallback.
+	currentConfig.CustomTheme = nil
+	if got := historyLineColor(pickCPU, ui.ColorGreen); got != ui.ColorGreen {
+		t.Fatalf("nil theme: got %v, want fallback ColorGreen", got)
+	}
+
+	// Custom theme with an explicit hex -> that color, NOT the fallback.
+	currentConfig.CustomTheme = &CustomThemeConfig{CPU: "#FF0000"}
+	want, err := ParseHexColor("#FF0000")
+	if err != nil {
+		t.Fatalf("ParseHexColor: %v", err)
+	}
+	if got := historyLineColor(pickCPU, ui.ColorGreen); got != want {
+		t.Fatalf("custom hex: got %v, want %v (custom color must survive live updates)", got, want)
+	}
+
+	// Custom theme present but this component unset -> the theme foreground.
+	currentConfig.CustomTheme = &CustomThemeConfig{}
+	fg := GetThemeColorWithLightMode(currentConfig.Theme, IsLightMode)
+	if got := historyLineColor(pickCPU, ui.ColorGreen); got != fg {
+		t.Fatalf("empty component: got %v, want theme fg %v", got, fg)
 	}
 }
 
