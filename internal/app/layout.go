@@ -482,28 +482,25 @@ func setHistoryFullLayoutGrid() {
 }
 
 func setHistorySoCLayoutGrid() {
-	// SoC History layout for ANE/ML workloads:
+	// SoC History layout for ANE/ML workloads (all charts, no process list):
 	// Row 1: CPU + GPU
 	// Row 2: ANE + SoC Power (rightmost)
 	// Row 3 (bottom): Memory BW (left) | Memory Used | SSD Read
+	// Rows scaled ×1.25 from the former 0.24/0.24/0.32 to reclaim the height
+	// the process list used to occupy.
 	grid.Set(
-		ui.NewRow(0.24,
+		ui.NewRow(0.30,
 			ui.NewCol(1.0/2, cpuHistoryChart),
 			ui.NewCol(1.0/2, gpuHistoryChart),
 		),
-		ui.NewRow(0.24,
+		ui.NewRow(0.30,
 			ui.NewCol(1.0/2, aneHistoryChart),
 			ui.NewCol(1.0/2, socPowerHistoryChart),
 		),
-		ui.NewRow(0.32,
+		ui.NewRow(0.40,
 			ui.NewCol(1.0/3, bandwidthHistoryChart), // Memory BW leftmost
 			ui.NewCol(1.0/3, memoryHistoryChart),
 			ui.NewCol(1.0/3, ssdReadHistoryChart),
-		),
-		// Compact process list at the bottom, as documented — keeps F9 kill,
-		// search, and scroll available like the other history layouts.
-		ui.NewRow(0.20,
-			ui.NewCol(1.0, processList),
 		),
 	)
 
