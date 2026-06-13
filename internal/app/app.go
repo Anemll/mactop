@@ -1780,7 +1780,11 @@ func getBestLinkInfoString(ethInfo []EthernetLinkInfo, wifiInfo *WiFiLinkInfo) s
 
 func updateNetDiskUI(netdiskMetrics NetDiskMetrics) {
 	// Update SSD read history (GB/s) for history_soc layout
-	readGBs := netdiskMetrics.ReadKBytesPerSec / 1024.0 / 1024.0
+	// Decimal GB/s (bytes/1e9), matching the adjacent DRAM/ANE bandwidth
+	// charts so equal throughput plots at equal height under the shared
+	// "GB/s" axis label. ReadKBytesPerSec is KiB/s (bytes/1024), so multiply
+	// back to bytes before the decimal divide.
+	readGBs := netdiskMetrics.ReadKBytesPerSec * 1024.0 / 1e9
 	for i := 0; i < len(ssdReadHistory)-1; i++ {
 		ssdReadHistory[i] = ssdReadHistory[i+1]
 	}
