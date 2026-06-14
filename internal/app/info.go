@@ -97,7 +97,14 @@ func buildInfoLines(themeColor string) []string {
 		"",
 		formatLine(i18n.T("Info_CPUUsage"), fmt.Sprintf("%.2f%%", float64(cpuGauge.Percent))),
 		formatLine(i18n.T("Info_GPUUsage"), fmt.Sprintf("%d%%", int(lastGPUMetrics.ActivePercent))),
-		formatLine(i18n.T("Info_ANEUsage"), fmt.Sprintf("%d%%", int(anePct))),
+		formatLine(i18n.T("Info_ANEUsage"), func() string {
+			// M5 Max / macOS 27 non-root: ANEActive is the binary power-domain
+			// signal, so show powered/idle instead of a misleading percentage.
+			if lastCPUMetrics.ANEPowered {
+				return anePoweredLabel(anePct)
+			}
+			return fmt.Sprintf("%d%%", int(anePct))
+		}()),
 		formatLine(i18n.T("Info_Power"), fmt.Sprintf(i18n.T("Info_PowerValue"), lastCPUMetrics.PackageW, avgWatts)),
 		formatLine(i18n.T("Info_Thermals"), thermalStr),
 		formatLine(i18n.T("Info_Network"), fmt.Sprintf(i18n.T("Info_NetworkValue"), formatBytes(lastNetDiskMetrics.OutBytesPerSec, networkUnit), formatBytes(lastNetDiskMetrics.InBytesPerSec, networkUnit))),

@@ -976,7 +976,7 @@ func updateCPUUI(cpuMetrics CPUMetrics) {
 	updateMemoryHistory(memoryMetrics)
 
 	// New SoC history charts (for history_soc layout)
-	updateANEHistory(cpuMetrics.ANEW, cpuMetrics.ANEActive)
+	updateANEHistory(cpuMetrics.ANEW, cpuMetrics.ANEActive, cpuMetrics.ANEPowered)
 	updateBandwidthHistory(cpuMetrics)
 	updateSoCPowerHistory(cpuMetrics)
 
@@ -1098,12 +1098,25 @@ func updateMemoryHistory(memoryMetrics MemoryMetrics) {
 	updateMemBandwidthHistory()
 }
 
-func updateANEHistory(aneWatts float64, aneActive float64) {
+// anePoweredLabel renders the binary ANE power-domain signal (M5 Max / macOS 27
+// non-root, where no PMP utilization channel exists) as a powered/idle word
+// instead of a misleading percentage. The value is the power-domain duty cycle
+// over the sample window; >0 means the ANE was powered for at least part of it.
+func anePoweredLabel(dutyPct float64) string {
+	if dutyPct > 0 {
+		return "powered"
+	}
+	return "idle"
+}
+
+func updateANEHistory(aneWatts float64, aneActive float64, anePowered bool) {
 	// Prefer the direct ANE % parsed from PMP state residencies (macOS 27+ /
 	// M5). Fall back to the legacy power-derived estimate on older chips
-	// where those channels produce no data but Energy Model power works.
+	// where those channels produce no data but Energy Model power works — but
+	// not when aneActive is the binary power-state signal (anePowered), whose 0
+	// already means idle.
 	anePct := aneActive
-	if anePct <= 0 && aneWatts > 0 {
+	if anePct <= 0 && aneWatts > 0 && !anePowered {
 		anePct = aneWatts / 8.0 * 100
 	}
 	if anePct < 0 {
@@ -1164,13 +1177,23 @@ func updateANEHistory(aneWatts float64, aneActive float64) {
 				}
 				aneHistoryChart.Data = [][]float64{visibleRaw}
 				aneHistoryChart.LineColors = []ui.Color{ui.ColorRed} // ANE red in SoC
-				aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2fW)", anePct, currentPeak, aneWatts)
-				aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
+				if anePowered {
+					aneHistoryChart.Title = fmt.Sprintf("ANE %s (%.2fW)", anePoweredLabel(anePct), aneWatts)
+					aneHistoryChart.DataLabels = []string{anePoweredLabel(anePct)}
+				} else {
+					aneHistoryChart.Title = fmt.Sprintf("ANE %.1f%% (Peak %.1f%%, %.2fW)", anePct, currentPeak, aneWatts)
+					aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
+				}
 			} else {
 				aneHistoryChart.Data = [][]float64{visibleRaw}
 				aneHistoryChart.LineColors = []ui.Color{ui.ColorMagenta}
-				aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetail"), anePct, aneWatts)
-				aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
+				if anePowered {
+					aneHistoryChart.Title = fmt.Sprintf("ANE %s (%.2fW)", anePoweredLabel(anePct), aneWatts)
+					aneHistoryChart.DataLabels = []string{anePoweredLabel(anePct)}
+				} else {
+					aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetail"), anePct, aneWatts)
+					aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
+				}
 			}
 			aneHistoryChart.MaxVal = scaleMax
 		}
@@ -1460,7 +1483,10 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 	// reads 0). On older chips those PMP channels produce no data, so fall
 	// back to the legacy power-derived estimate (~8 W full-scale ANE).
 	aneUtil := cpuMetrics.ANEActive
-	if aneUtil <= 0 {
+	// Only fall back to the legacy power-derived estimate when we have a real %
+	// (not the binary power-state signal, which is 0 precisely because the ANE
+	// is idle — applying the estimate there would be wrong).
+	if aneUtil <= 0 && !cpuMetrics.ANEPowered {
 		aneUtil = float64(cpuMetrics.ANEW / 8.0 * 100)
 	}
 	if aneUtil < 0 {
@@ -1471,6 +1497,10 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 	}
 	if isCompactLayout() {
 		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeCompact"), cpuMetrics.ANEW)
+	} else if cpuMetrics.ANEPowered {
+		// M5 Max / macOS 27 non-root: aneUtil is the ANE power-domain duty cycle,
+		// a system-wide powered/idle signal rather than a true utilization %.
+		aneGauge.Title = fmt.Sprintf("ANE %s (%.2fW)", anePoweredLabel(aneUtil), cpuMetrics.ANEW)
 	} else {
 		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGauge"), aneUtil, cpuMetrics.ANEW)
 	}

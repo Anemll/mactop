@@ -23,6 +23,7 @@ type CPUMetrics struct {
 	CoreMetrics                                                      map[string]int
 	ANEW, CPUW, GPUW, DRAMW, GPUSRAMW, PackageW, SystemW             float64
 	ANEActive                                                        float64
+	ANEPowered                                                       bool // ANEActive is binary power-domain state (M5 Max non-root), not a true %
 	ANEReadBW                                                        float64
 	ANEWriteBW                                                       float64
 	CoreUsages                                                       []float64

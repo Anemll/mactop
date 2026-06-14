@@ -104,6 +104,7 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		GPUW:            m.GPUPower,
 		ANEW:            m.ANEPower,
 		ANEActive:       m.ANEActive,
+		ANEPowered:      m.ANEPowered,
 		ANEReadBW:       m.ANEReadBW,
 		ANEWriteBW:      m.ANEWriteBW,
 		DRAMW:           m.DRAMPower,

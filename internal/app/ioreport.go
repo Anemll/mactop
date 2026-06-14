@@ -85,6 +85,7 @@ typedef struct {
     int64_t actualDurationNs;
     int64_t aneReadBytes;
     int64_t aneWriteBytes;
+    int aneIsPowerState;
     int fanCount;
     fan_info_t fans[8];
     int tempSensorCount;
@@ -163,6 +164,9 @@ type SocMetrics struct {
 	ANEWriteBW      float64      `json:"ane_write_bw_gbs"`
 	ANEBWCombined   float64      `json:"ane_bw_combined_gbs"`
 	ANEActive       float64      `json:"ane_active"`
+	// ANEPowered is true when ANEActive is the binary ANE power-domain signal
+	// (M5 Max / macOS 27 non-root fallback) rather than a true utilization %.
+	ANEPowered      bool         `json:"ane_powered,omitempty"`
 	Fans            []FanInfo    `json:"-"`
 	TempSensors     []TempSensor `json:"-"`
 }
@@ -262,6 +266,7 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		ANEWriteBW:      aneWriteBW,
 		ANEBWCombined:   aneBWCombined,
 		ANEActive:       float64(pm.aneActive),
+		ANEPowered:      pm.aneIsPowerState != 0,
 		Fans:            fans,
 		TempSensors:     tempSensors,
 	}

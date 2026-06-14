@@ -1431,6 +1431,9 @@ typedef struct {
   int64_t actualDurationNs;
   int64_t aneReadBytes;
   int64_t aneWriteBytes;
+  // 1 => aneActive is the binary ANE power-domain duty cycle (M5 Max / macOS 27
+  // non-root fallback: ANE powered vs idle), NOT a true utilization %.
+  int aneIsPowerState;
   // Fan data
   int fanCount;
   fan_info_t fans[8];
@@ -2508,6 +2511,54 @@ static void readNVMeSMARTTemps(void) {
   }
 }
 
+// --- ANE activity fallback via IORegistry power state -----------------------
+// On M5 Max / macOS 27 the PMP performance-floor IOReport channels that mactop
+// derives ANE utilization from (ANE-AF-BW / ANE-DCS-BW) are EMPTY for a non-root
+// process — the whole PMP group returns 0 channels — so the normal aneActive
+// computation is stuck at a constant 0%. The Apple Neural Engine driver
+// (IOClass "H11ANEIn") publishes IOPowerManagement.CurrentPowerState in the
+// IORegistry: 0 when the ANE is idle/unpowered, 1 when it is powered for
+// inference. That property is readable without root, so sampling its duty cycle
+// across the measurement window gives a usable ANE activity estimate.
+//
+// MaxPowerState is 1 on current silicon (binary on/off), so this is a coarse
+// "fraction of the window the ANE was powered" signal rather than a fine-grained
+// load percentage; it reads ~100% during sustained on-device inference and 0%
+// at idle. The ANE power domain has a short cool-down tail (~5s on M5 Max) after
+// the last inference before it powers off, so the reading lingers near 100% for
+// a few seconds after activity stops — acceptable for a live monitor and far
+// better than the constant 0% it replaces. It is only used as a fallback when no
+// PMP ANE utilization channel is present (chips that expose PMP keep using the
+// higher-resolution floor-residency signal). No finer-grained non-root counter
+// exists: the ANE HAL / load-balancer IORegistry nodes carry only static device
+// info, and the PMP performance-floor channels are empty for non-root here.
+static io_service_t copyAneService(void) {
+  // The ANE interface driver has kept the IOClass name "H11ANEIn" across Apple
+  // silicon generations (M1..M5), so match on it directly. IOServiceMatching
+  // returns a dict that IOServiceGetMatchingService consumes (no leak).
+  return IOServiceGetMatchingService(kIOMainPortDefault,
+                                     IOServiceMatching("H11ANEIn"));
+}
+
+// Returns the ANE CurrentPowerState (>=0), or -1 if unavailable.
+static int readAnePowerState(io_service_t svc) {
+  if (svc == MACH_PORT_NULL) return -1;
+  CFTypeRef pm = IORegistryEntryCreateCFProperty(
+      svc, CFSTR("IOPowerManagement"), kCFAllocatorDefault, 0);
+  if (pm == NULL) return -1;
+  int state = -1;
+  if (CFGetTypeID(pm) == CFDictionaryGetTypeID()) {
+    CFNumberRef cur = (CFNumberRef)CFDictionaryGetValue(
+        (CFDictionaryRef)pm, CFSTR("CurrentPowerState"));
+    if (cur != NULL && CFGetTypeID(cur) == CFNumberGetTypeID()) {
+      int v = 0;
+      if (CFNumberGetValue(cur, kCFNumberIntType, &v)) state = v;
+    }
+  }
+  CFRelease(pm);
+  return state;
+}
+
 PowerMetrics samplePowerMetrics(int durationMs) {
   PowerMetrics metrics = {0};
 
@@ -2532,7 +2583,31 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   if (sample1 == NULL)
     return metrics;
 
-  usleep(durationMs * 1000);
+  // Sample the ANE power-state duty cycle across the measurement window, in
+  // place of a single window sleep so it adds no extra latency. Used as the
+  // fallback ANE-activity signal when the PMP performance-floor channels are
+  // absent (M5 Max / macOS 27, non-root). anePowerStatePct < 0 => unavailable.
+  double anePowerStatePct = -1.0;
+  {
+    io_service_t aneSvc = copyAneService();
+    int slices = durationMs / 50; // ~50ms cadence (20 samples over a 1s window)
+    if (slices < 1) slices = 1;
+    useconds_t sliceUs = (useconds_t)((long)durationMs * 1000 / slices);
+    int samples = 0, powered = 0;
+    for (int si = 0; si < slices; si++) {
+      if (aneSvc != MACH_PORT_NULL) {
+        int st = readAnePowerState(aneSvc);
+        if (st >= 0) {
+          samples++;
+          if (st >= 1) powered++;
+        }
+      }
+      usleep(sliceUs);
+    }
+    if (aneSvc != MACH_PORT_NULL) IOObjectRelease(aneSvc);
+    if (samples > 0)
+      anePowerStatePct = (double)powered / (double)samples * 100.0;
+  }
 
   CFDictionaryRef sample2 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
@@ -2601,6 +2676,7 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int64_t pmpAneReadBytes = 0;
   int64_t pmpAneWriteBytes = 0;
   bool sawAnePmpActivity = false;  // any positive residency on ANE* PMP channels (macOS 27+)
+  bool sawAneUtilChannel = false;  // a usable PMP ANE floor/util channel was present at all
 
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(channels, i);
@@ -2914,6 +2990,7 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         // residency deltas. Idle states: OFF/IDLE/DOWN/SLEEP plus the lowest
         // floor request (VMIN for SOC Floor, F1 for DCS Floor, 0% for Fast-Die CE).
         if (stateCount > 1 && (isAneFloorChannel || isAneEngineStateChannel)) {
+          sawAneUtilChannel = true; // PMP exposes a real ANE util signal here
           int64_t totalTime = 0;
           int64_t activeTime = 0;
           for (int32_t s = 0; s < stateCount; s++) {
@@ -3098,6 +3175,16 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   // the Energy Model "ANE" power channel is 0 for on-device inference).
   metrics.aneReadBytes = pmpAneReadBytes;
   metrics.aneWriteBytes = pmpAneWriteBytes;
+
+  // ANE utilization fallback (M5 Max / macOS 27): when no PMP ANE floor/util
+  // channel was present at all, aneActive would be stuck at 0% even under
+  // on-device inference. Substitute the H11ANE driver's IOPowerManagement
+  // power-state duty cycle sampled across the window (see copyAneService). Chips
+  // that do expose PMP keep their higher-resolution floor-residency signal.
+  if (!sawAneUtilChannel && anePowerStatePct >= 0.0) {
+    metrics.aneActive = anePowerStatePct;
+    metrics.aneIsPowerState = 1; // signal the UI to label this "powered", not a %
+  }
 
   // Fallback: estimate DRAM BW from DRAM power after local calibration.
   // DRAM power = static (leakage/refresh) + dynamic (data transfer).
