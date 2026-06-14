@@ -690,6 +690,7 @@ static void readKperfDramBW(int64_t *readBytes, int64_t *writeBytes) {
 static int cfStringMatch(CFStringRef str, const char *cStr);
 static int cfStringStartsWith(CFStringRef str, const char *prefix);
 static double energyToWatts(int64_t energy, CFStringRef unitRef, double durationMs);
+static void printLiveEnergyContributors(int durationMs);
 
 // === Auto-calibration for DRAM power -> bandwidth conversion ===
 // When direct byte counters are unavailable or appear blocked, estimate DRAM BW
@@ -923,6 +924,18 @@ int initIOReport() {
     fprintf(stderr, "initIOReport: warning: 'GPU Stats' channel group not found\n");
   }
 
+  // Forward-compat: Apple is migrating block-energy accounting (macOS 27 beta
+  // ships new pmgr "energy-counters" descriptors, and powermetrics carries an
+  // "Energy Counters" group name in its channel tables). Merge that group too
+  // if it ever appears so mactop picks the new source up automatically; absent
+  // on current OSes, this is a no-op.
+  CFDictionaryRef energyCountersChan =
+      IOReportCopyChannelsInGroup(CFSTR("Energy Counters"), NULL, 0, 0, 0);
+  if (energyCountersChan != NULL) {
+    IOReportMergeChannels(energyChan, energyCountersChan, NULL);
+    CFRelease(energyCountersChan);
+  }
+
   CFDictionaryRef cpuChan =
       IOReportCopyChannelsInGroup(cpuGroup, NULL, 0, 0, 0);
   hasCpu = (cpuChan != NULL);
@@ -1039,6 +1052,87 @@ int initIOReport() {
     // PMP is cheap to add compared with calibration; calibration stays deferred
     // until runtime activity proves there is memory traffic to recover.
     ensurePMPDramChannels();
+  }
+
+  // macOS 27+ / M5 (and current M-series): the "ANE" channel inside "Energy Model"
+  // reports 0 delta even under real on-device inference (fm "system" model,
+  // CoreML, etc.). The only live ANE signal is in PMP state channels:
+  // the ANE-AF-BW / ANE-DCS-BW performance-floor residencies (utilization) and
+  // the ANE0 RD/WR rate histograms (bandwidth). See samplePowerMetrics.
+  //
+  // Previously on M5 we deliberately avoided the full PMP group (hundreds of
+  // channels) to reduce per-tick IPC cost. That meant the main subscription
+  // never bound to the PMP ANE channels → ANE always appeared as zero.
+  //
+  // Fix: pull in *only* the ANE-related PMP channels (filtered by name).
+  // This binds us to the correct IOReport data for ANE without the full PMP cost.
+  // Skipped when ensurePMPDramChannels() already merged the full PMP group
+  // above (A-series, and M5+ without direct AMC BW): merging the ANE channels
+  // again would duplicate them in the subscription. The ANE parsers in
+  // samplePowerMetrics are duplicate-safe (max, not sum) either way — the
+  // dynamic PMP fallback re-merge can still introduce duplicates later.
+  if (!g_pmp_channels_attempted) {
+    CFDictionaryRef pmpAll = IOReportCopyChannelsInGroup(CFSTR("PMP"), NULL, 0, 0, 0);
+    if (pmpAll) {
+      CFArrayRef pmpChs = CFDictionaryGetValue(pmpAll, CFSTR("IOReportChannels"));
+      CFIndex pmpCnt = pmpChs ? CFArrayGetCount(pmpChs) : 0;
+      if (pmpCnt > 0) {
+        CFMutableArrayRef aneChs = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+        for (CFIndex i = 0; i < pmpCnt; i++) {
+          CFDictionaryRef ch = (CFDictionaryRef)CFArrayGetValueAtIndex(pmpChs, i);
+          CFStringRef nm = IOReportChannelGetChannelName(ch);
+          if (nm) {
+            char buf[256] = {0};
+            CFStringGetCString(nm, buf, sizeof(buf), kCFStringEncodingUTF8);
+            if (strstr(buf, "ANE") != NULL || strstr(buf, "ane") != NULL) {
+              CFArrayAppendValue(aneChs, ch);
+            }
+          }
+        }
+        CFIndex aneCnt = CFArrayGetCount(aneChs);
+        if (aneCnt > 0) {
+          CFMutableDictionaryRef anePmp = CFDictionaryCreateMutable(
+              kCFAllocatorDefault, 0,
+              &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+          CFDictionarySetValue(anePmp, CFSTR("IOReportChannels"), aneChs);
+
+          // Merge into a COPY and only publish channels + subscription
+          // together once the new subscription succeeds. Merging g_channels
+          // in place first would leave the dictionary containing ANE entries
+          // that the still-active old subscription never samples if
+          // IOReportCreateSubscription fails — silently dead ANE data with
+          // no retry. Releasing the superseded pair is safe here because
+          // initIOReport runs single-threaded, before the background
+          // calibration thread that reads these globals exists. (The runtime
+          // re-merge in ensurePMPDramChannels deliberately does NOT release
+          // for that reason.)
+          CFMutableDictionaryRef aneMerged =
+              CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, g_channels);
+          if (aneMerged != NULL) {
+            IOReportMergeChannels((CFDictionaryRef)aneMerged, anePmp, NULL);
+            CFMutableDictionaryRef aneSubsystem = NULL;
+            IOReportSubscriptionRef newSub =
+                IOReportCreateSubscription(NULL, aneMerged, &aneSubsystem, 0, NULL);
+            if (newSub != NULL) {
+              if (g_subscription != NULL) {
+                CFRelease(g_subscription);
+              }
+              CFRelease(g_channels);
+              g_channels = aneMerged;
+              g_subscription = newSub;
+            } else {
+              CFRelease(aneMerged); // keep the working pre-merge pair
+            }
+            if (aneSubsystem != NULL) {
+              CFRelease(aneSubsystem);
+            }
+          }
+          CFRelease(anePmp);
+        }
+        CFRelease(aneChs);
+      }
+      CFRelease(pmpAll);
+    }
   }
 
   return 0;
@@ -1327,6 +1421,23 @@ void dumpIOReportDebug(void) {
     printf("  IOBlockStorageDevice matching failed\n");
   }
 
+  // Live rescan of Energy Model to discover current ANE / GPU / DRAM power channels.
+  // On macOS 27+ / M5 the channel names in Energy Model changed (bare "ANE", "GPU", "DRAM"
+  // in mJ alongside legacy "* Energy" suffixed ones). This prints actual watts contributed
+  // by each Energy Model channel over a 1s window so we can see which name(s) carry ANE
+  // activity when Apple Foundation Models / other ANE workloads run.
+  // NOTE: Use model="system" (not "pcc") on the local :1976 Apple Foundation Models
+  // server to exercise the real on-device ANE path that the Energy Model counters
+  // are supposed to track.
+  printf("\n--- Live Energy Model Contributors (1s sample) ---\n");
+  printLiveEnergyContributors(1000);
+  printf("  (Drive ANE load with: fm respond --model system --stream '<long prompt>'\n"
+         "   and re-run --dump-debug while it generates. On M5 / macOS 27 every\n"
+         "   energy-unit channel except the nJ \"GPU Energy\" reads 0 — ANE/CPU/DRAM\n"
+         "   power is not exposed to user space on this build; mactop reports the\n"
+         "   raw 0 rather than inventing a value. ANE utilization %% comes from the\n"
+         "   [UTIL] PMP floor channels above.)\n");
+
   printf("\n=== End Debug Dump ===\n");
 }
 typedef struct {
@@ -1338,6 +1449,7 @@ typedef struct {
   double systemPower;
   int gpuFreqMHz;
   double gpuActive;
+  double aneActive;
   double eClusterActive;
   double pClusterActive;
   double sClusterActive;
@@ -1349,6 +1461,12 @@ typedef struct {
   float gpuTemp;
   int64_t dramReadBytes;
   int64_t dramWriteBytes;
+  // ANE traffic bytes for this sample. Sourced from the AMC Stats
+  // "ANE<n> RD/WR" byte counters when they produce data (M1-M4, where they
+  // survive the macOS 27 energy-counter breakage), otherwise from the PMP
+  // "AF BW" ANE0 RD/WR rate histograms (M5+, where AMC is kernel-blocked).
+  int64_t aneReadBytes;
+  int64_t aneWriteBytes;
   // Actual wall-clock interval (ns) between the two IOReport samples used to
   // derive dramReadBytes/dramWriteBytes. Used by Go to compute exact GB/s
   // independent of scheduling jitter on usleep(durationMs).
@@ -1491,6 +1609,238 @@ static double energyToWatts(int64_t energy, CFStringRef unitRef,
     return rate / 1e9;
   }
   return rate / 1e6;
+}
+
+// Full rescan helper: subscribes to Energy Model (and PMP ANE channels) and prints
+// watts/raw for channels that may carry ANE power. This helps discover if the
+// IOReport binding for ANE power changed (new name, moved from Energy Model into
+// PMP, different units, etc.) on macOS 27/M5+ when driving the on-device "system"
+// model. Output is designed to be pasted as a "local markup report".
+static void printLiveEnergyContributors(int durationMs) {
+  if (durationMs <= 0) durationMs = 1000;
+
+  CFDictionaryRef energyChan =
+      IOReportCopyChannelsInGroup(CFSTR("Energy Model"), NULL, 0, 0, 0);
+  if (energyChan == NULL) {
+    printf("  Energy Model group not available for live probe\n");
+    return;
+  }
+
+  CFMutableDictionaryRef channels =
+      CFDictionaryCreateMutableCopy(kCFAllocatorDefault,
+                                    CFDictionaryGetCount(energyChan), energyChan);
+  CFRelease(energyChan);
+
+  CFMutableDictionaryRef subsystem = NULL;
+  IOReportSubscriptionRef sub =
+      IOReportCreateSubscription(NULL, channels, &subsystem, 0, NULL);
+  // The subsystem out-param is caller-owned and unused — release immediately
+  // so repeated --dump-debug runs don't leak it.
+  if (subsystem != NULL) {
+    CFRelease(subsystem);
+    subsystem = NULL;
+  }
+  if (sub == NULL) {
+    printf("  Failed to subscribe to Energy Model for live probe\n");
+    CFRelease(channels);
+    return;
+  }
+
+  CFDictionaryRef s1 = IOReportCreateSamples(sub, channels, NULL);
+  usleep((useconds_t)durationMs * 1000);
+  CFDictionaryRef s2 = IOReportCreateSamples(sub, channels, NULL);
+
+  if (!s1 || !s2) {
+    printf("  Failed to sample Energy Model\n");
+    if (s1) CFRelease(s1);
+    if (s2) CFRelease(s2);
+    CFRelease(channels);
+    CFRelease(sub);
+    return;
+  }
+
+  CFDictionaryRef delta = IOReportCreateSamplesDelta(s1, s2, NULL);
+  CFRelease(s1);
+  CFRelease(s2);
+
+  if (delta == NULL) {
+    printf("  Failed to compute delta for Energy Model\n");
+    CFRelease(channels);
+    CFRelease(sub);
+    return;
+  }
+
+  CFArrayRef arr = CFDictionaryGetValue(delta, CFSTR("IOReportChannels"));
+  CFIndex cnt = arr ? CFArrayGetCount(arr) : 0;
+
+  printf("  Channel (Energy Model)                Watts     Raw (unit)\n");
+  printf("  -----------------------------------------------------------\n");
+
+  double totalSeen = 0.0;
+  int aneIdx = -1;
+  double aneW = 0.0;
+
+  for (CFIndex i = 0; i < cnt; i++) {
+    CFDictionaryRef ch = (CFDictionaryRef)CFArrayGetValueAtIndex(arr, i);
+    if (!ch) continue;
+
+    CFStringRef grp = IOReportChannelGetGroup(ch);
+    if (!grp || !cfStringMatch(grp, "Energy Model")) continue;
+
+    CFStringRef nameRef = IOReportChannelGetChannelName(ch);
+    CFStringRef unitRef = IOReportChannelGetUnitLabel(ch);
+    int64_t val = IOReportSimpleGetIntegerValue(ch, 0);
+
+    char chn[128] = {0};
+    char unit[32] = {0};
+    if (nameRef) CFStringGetCString(nameRef, chn, sizeof(chn), kCFStringEncodingUTF8);
+    if (unitRef) CFStringGetCString(unitRef, unit, sizeof(unit), kCFStringEncodingUTF8);
+
+    double w = energyToWatts(val, unitRef, (double)durationMs);
+    totalSeen += w;
+
+    if (strstr(chn, "ANE") != NULL) {
+      aneIdx = (int)i;
+      aneW = w;
+    }
+
+    // Only print non-trivial contributors or the interesting ones (ANE/GPU/DRAM/CPU)
+    if (w > 0.0005 ||
+        strstr(chn, "ANE") != NULL ||
+        strstr(chn, "GPU") != NULL ||
+        strstr(chn, "DRAM") != NULL ||
+        strstr(chn, "CPU Energy") != NULL) {
+      printf("  %-35s %7.4f W   %lld %s\n", chn, w, (long long)val, unit);
+    }
+  }
+
+  printf("  -----------------------------------------------------------\n");
+  printf("  Sum of printed contributors: %.4f W\n", totalSeen);
+  if (aneIdx >= 0) {
+    printf("  *** ANE channel contribution in this window: %.4f W ***\n", aneW);
+  } else {
+    printf("  *** No channel containing 'ANE' contributed power in this window ***\n");
+  }
+
+  CFRelease(delta);
+  CFRelease(channels);
+  CFRelease(sub);
+
+  // Raw dump of every PMP ANE channel. All of these are IOReport STATE
+  // channels on macOS 27 / M5 — residencies are printed per state, exactly
+  // as returned by IOReportStateGetResidency. The channels marked [UTIL]
+  // (ANE-AF-BW / ANE-DCS-BW floors, plus the ANE0 engine-state channels if
+  // they ever produce data) are the ones mactop's ANE %% is computed from:
+  // active = time not in OFF/IDLE/DOWN/SLEEP/VMIN/F1/0%%.
+  printf("\n--- PMP ANE channel scan (raw state residencies) ---\n");
+  CFDictionaryRef pmp = IOReportCopyChannelsInGroup(CFSTR("PMP"), NULL, 0, 0, 0);
+  if (pmp) {
+    CFMutableDictionaryRef pmpCh = CFDictionaryCreateMutableCopy(kCFAllocatorDefault, CFDictionaryGetCount(pmp), pmp);
+    CFRelease(pmp);
+    CFMutableDictionaryRef subSys = NULL;
+    IOReportSubscriptionRef pmpSub = IOReportCreateSubscription(NULL, pmpCh, &subSys, 0, NULL);
+    if (subSys != NULL) {
+      CFRelease(subSys); // caller-owned out-param, unused
+      subSys = NULL;
+    }
+    if (pmpSub) {
+      CFDictionaryRef p1 = IOReportCreateSamples(pmpSub, pmpCh, NULL);
+      usleep((useconds_t)durationMs * 1000);
+      CFDictionaryRef p2 = IOReportCreateSamples(pmpSub, pmpCh, NULL);
+      if (p1 && p2) {
+        CFDictionaryRef pDelta = IOReportCreateSamplesDelta(p1, p2, NULL);
+        if (pDelta) {
+          CFArrayRef pArr = CFDictionaryGetValue(pDelta, CFSTR("IOReportChannels"));
+          CFIndex pCnt = pArr ? CFArrayGetCount(pArr) : 0;
+          int found = 0;
+          for (CFIndex i = 0; i < pCnt; i++) {
+            CFDictionaryRef ch = (CFDictionaryRef)CFArrayGetValueAtIndex(pArr, i);
+            if (!ch) continue;
+            CFStringRef grp = IOReportChannelGetGroup(ch);
+            CFStringRef nm = IOReportChannelGetChannelName(ch);
+            if (!grp || !nm) continue;
+            char gbuf[64]={0}, nbuf[256]={0};
+            CFStringGetCString(grp, gbuf, sizeof(gbuf), kCFStringEncodingUTF8);
+            CFStringGetCString(nm, nbuf, sizeof(nbuf), kCFStringEncodingUTF8);
+            if (strcmp(gbuf, "PMP") != 0) continue;
+            if (strstr(nbuf, "ANE") == NULL && strstr(nbuf, "ane") == NULL) continue;
+            CFStringRef subRef = IOReportChannelGetSubGroup(ch);
+            char sub[64]={0};
+            if (subRef) CFStringGetCString(subRef, sub, sizeof(sub), kCFStringEncodingUTF8);
+            bool isAneFloorChannel =
+                (strcmp(nbuf, "ANE-AF-BW") == 0 || strcmp(nbuf, "ANE-DCS-BW") == 0) &&
+                strstr(sub, "Floor") != NULL;
+            bool isAneEngineStateChannel = (strcmp(nbuf, "ANE0") == 0) &&
+              (strstr(sub, "Floor") != NULL || strstr(sub, "Fast-Die") != NULL ||
+               strstr(sub, "CE") != NULL || strstr(sub, "SOC") != NULL || strstr(sub, "Util") != NULL);
+            CFStringRef uRef = IOReportChannelGetUnitLabel(ch);
+            char ubuf[32]={0};
+            if (uRef) CFStringGetCString(uRef, ubuf, sizeof(ubuf), kCFStringEncodingUTF8);
+            int32_t sc = IOReportStateGetCount(ch);
+
+            if (sc > 1) {
+              // State channel: dump every state with a non-zero residency delta,
+              // and the active %% for the utilization-bearing channels.
+              int64_t tot = 0, act = 0;
+              for (int32_t s = 0; s < sc; s++) {
+                int64_t r = IOReportStateGetResidency(ch, s);
+                tot += r;
+                CFStringRef sn = IOReportStateGetNameForIndex(ch, s);
+                if (sn) {
+                  char snb[64] = {0};
+                  CFStringGetCString(sn, snb, sizeof(snb), kCFStringEncodingUTF8);
+                  if (strcmp(snb, "OFF") != 0 && strcmp(snb, "IDLE") != 0 &&
+                      strcmp(snb, "DOWN") != 0 && strcmp(snb, "SLEEP") != 0 &&
+                      strcmp(snb, "VMIN") != 0 && strcmp(snb, "F1") != 0 &&
+                      strcmp(snb, "0%") != 0) {
+                    act += r;
+                  }
+                }
+              }
+              printf("  [%s%s] %s / %s — %d states, total %lld %s\n",
+                     (isAneFloorChannel || isAneEngineStateChannel) ? "UTIL" : "BW",
+                     "", sub, nbuf, sc, (long long)tot, ubuf);
+              if (tot == 0) {
+                printf("      (no residency in this window — channel idle or dead on this build)\n");
+              } else {
+                for (int32_t s = 0; s < sc; s++) {
+                  int64_t r = IOReportStateGetResidency(ch, s);
+                  if (r == 0) continue;
+                  CFStringRef sn = IOReportStateGetNameForIndex(ch, s);
+                  char snb[64] = {0};
+                  if (sn) CFStringGetCString(sn, snb, sizeof(snb), kCFStringEncodingUTF8);
+                  printf("      %-10s %12lld  (%.1f%%)\n", snb[0] ? snb : "?",
+                         (long long)r, (double)r / (double)tot * 100.0);
+                }
+                if (isAneFloorChannel || isAneEngineStateChannel) {
+                  printf("      => ANE active (above idle floor): %.1f%%\n",
+                         (double)act / (double)tot * 100.0);
+                }
+              }
+            } else {
+              // Simple channel: raw integer delta (only energy units get watts).
+              int64_t v = IOReportSimpleGetIntegerValue(ch, 0);
+              if (strstr(ubuf, "J") || strstr(ubuf, "j")) {
+                printf("  [SIMPLE] %s / %s = %lld %s (%.4f W)\n", sub, nbuf,
+                       (long long)v, ubuf, energyToWatts(v, uRef, (double)durationMs));
+              } else {
+                printf("  [SIMPLE] %s / %s = %lld %s\n", sub, nbuf, (long long)v, ubuf);
+              }
+            }
+            found++;
+          }
+          if (!found) printf("  (no ANE* PMP channels found)\n");
+          CFRelease(pDelta);
+        }
+      }
+      if (p1) CFRelease(p1);
+      if (p2) CFRelease(p2);
+      CFRelease(pmpSub);
+    }
+    CFRelease(pmpCh);
+  } else {
+    printf("  (could not copy PMP channels for ANE power scan)\n");
+  }
 }
 
 static char g_cpu_keys[64][5];
@@ -2220,14 +2570,24 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   @autoreleasepool {
 
   // Capture wall-clock interval between the two IOReport snapshots so that
-  // DRAM BW (bytes / time) reflects the true measurement window rather than
-  // the requested usleep target (which jitters under scheduling pressure).
+  // DRAM/ANE BW (bytes / time) reflects the true measurement window rather
+  // than the requested usleep target (which jitters under scheduling
+  // pressure).
+  //
+  // Anchor both timestamps AFTER their IOReportCreateSamples call returns.
+  // The kernel snapshots the counters inside the call, so the byte delta
+  // spans roughly snapshot1->snapshot2; taking t1 before the first call adds
+  // that call's full cost (tens to ~100 ms on a large merged channel set) to
+  // the divisor but not to the delta, systematically under-reporting BW by
+  // 10-20% at 1 s intervals (verified against an independent same-window
+  // reader). With both anchors after-return, the post-snapshot overhead
+  // appears in both timestamps and cancels.
   static mach_timebase_info_data_t s_tb = {0, 0};
   if (s_tb.denom == 0) mach_timebase_info(&s_tb);
-  uint64_t t1 = mach_absolute_time();
 
   CFDictionaryRef sample1 =
       IOReportCreateSamples(g_subscription, g_channels, NULL);
+  uint64_t t1 = mach_absolute_time();
 
   if (sample1 == NULL)
     return metrics;
@@ -2298,6 +2658,24 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   int64_t pmpDramReadBytes = 0;
   int64_t pmpDramWriteBytes = 0;
   int64_t pmpDramCombinedBytes = 0;
+  int64_t amcAneReadBytes = 0;
+  int64_t amcAneWriteBytes = 0;
+  double cpuTotalEnergyW = 0;
+  double cpuTypedEnergyW = 0;
+  // Per-block vs aggregate buckets for GPU/ANE/DRAM energy (mirrors the CPU
+  // naming-generation buckets): if an OS ever exposes a legacy per-block
+  // channel set AND a newer aggregate alias simultaneously, summing both
+  // would double-count. Prefer the per-block sums; use aggregates only when
+  // no per-block channel produced data.
+  double gpuEnergyNamedW = 0;  // exact "GPU Energy"
+  double gpuEnergyAliasW = 0;  // exact "GPU"
+  double aneBlockEnergyW = 0;  // "ANE0_0", "ANE0_1", ... (no "Energy" suffix)
+  double aneNamedEnergyW = 0;  // "ANE Energy"-style aggregates
+  double dramBlockEnergyW = 0; // "DRAM0_0", ...
+  double dramNamedEnergyW = 0; // "DRAM Energy"-style aggregates
+  int64_t pmpAneReadBytes = 0;
+  int64_t pmpAneWriteBytes = 0;
+  bool sawAnePmpActivity = false;  // any positive residency on ANE* PMP channels (macOS 27+)
 
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef item = (CFDictionaryRef)CFArrayGetValueAtIndex(channels, i);
@@ -2318,21 +2696,57 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     CFStringGetCString(groupRef, grp, sizeof(grp), kCFStringEncodingUTF8);
     CFStringGetCString(channelRef, chn, sizeof(chn), kCFStringEncodingUTF8);
 
-    if (strcmp(grp, "Energy Model") == 0) {
+    if (strcmp(grp, "Energy Model") == 0 ||
+        strcmp(grp, "Energy Counters") == 0) {
+      // "Energy Counters" is the successor group name appearing in macOS 27's
+      // pmgr descriptors / powermetrics tables; matched alongside the classic
+      // "Energy Model" so the migration is picked up automatically.
       CFStringRef unitRef = IOReportChannelGetUnitLabel(item);
       int64_t val = IOReportSimpleGetIntegerValue(item, 0);
       double watts = energyToWatts(val, unitRef, sampleDurationMs);
 
-      if (strstr(chn, "CPU Energy") != NULL) {
-        metrics.cpuPower += watts;
+      // CPU energy comes in two naming generations (per powermetrics' own
+      // channel tables): cluster-type channels ("ECPU Energy", "PCPU Energy",
+      // "MCPU Energy", "eCPUs Energy", "mCPUs Energy") and whole-CPU totals
+      // ("CPU Energy", "DIE_n_CPU Energy"). Bucket them separately and prefer
+      // totals after the loop — summing both would double-count on an OS that
+      // exposes the per-type and total channels simultaneously.
+      int isTypedCpuEnergy =
+          strstr(chn, "ECPU Energy") != NULL ||
+          strstr(chn, "PCPU Energy") != NULL ||
+          strstr(chn, "MCPU Energy") != NULL ||
+          strstr(chn, "eCPUs Energy") != NULL ||
+          strstr(chn, "pCPUs Energy") != NULL ||
+          strstr(chn, "mCPUs Energy") != NULL;
+      if (isTypedCpuEnergy) {
+        cpuTypedEnergyW += watts;
+      } else if (strstr(chn, "CPU Energy") != NULL) {
+        cpuTotalEnergyW += watts;
       } else if (strcmp(chn, "GPU Energy") == 0) {
-        metrics.gpuPower += watts;
-      } else if (strncmp(chn, "ANE", 3) == 0) {
-        metrics.anePower += watts;
-      } else if (strncmp(chn, "DRAM", 4) == 0) {
-        metrics.dramPower += watts;
+        gpuEnergyNamedW += watts;
+      } else if (strcmp(chn, "GPU") == 0) {
+        gpuEnergyAliasW += watts;
       } else if (strncmp(chn, "GPU SRAM", 8) == 0) {
         metrics.gpuSramPower += watts;
+      } else if (strstr(chn, "ANE") != NULL ||
+                 strstr(chn, "NPU") != NULL ||
+                 strstr(chn, "Neural") != NULL ||
+                 strstr(chn, "ane") != NULL) {
+        // Broad match in case the ANE power channel name changed on macOS 27/M5
+        // (or moved to a different spelling in Energy Model). Aggregate
+        // "Energy"-suffixed aliases are bucketed apart from the per-block
+        // ANE0_0/ANE0_1 counters so coexisting generations don't double count.
+        if (strstr(chn, "Energy") != NULL) {
+          aneNamedEnergyW += watts;
+        } else {
+          aneBlockEnergyW += watts;
+        }
+      } else if (strncmp(chn, "DRAM", 4) == 0) {
+        if (strstr(chn, "Energy") != NULL) {
+          dramNamedEnergyW += watts;
+        } else {
+          dramBlockEnergyW += watts;
+        }
       }
     } else if (strcmp(grp, "GPU Stats") == 0) {
       CFStringRef subgroupRef = IOReportChannelGetSubGroup(item);
@@ -2505,6 +2919,18 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         continue;
       int direction = amcChannelDirection(chn);
 
+      // ANE fabric traffic ("ANE0 RD", "ANE1 WR", ...). Tracked separately as
+      // a Neural Engine activity signal; the "ANE<n> DCS *" variants are a
+      // subset already counted by the DRAM client-DCS classification below,
+      // so only the plain fabric counters are summed here. This does not
+      // remove the channel from the DRAM accounting chain.
+      if (strncmp(chn, "ANE", 3) == 0 && strstr(chn, "DCS") == NULL) {
+        if (direction == 1)
+          amcAneReadBytes += val;
+        else if (direction == 2)
+          amcAneWriteBytes += val;
+      }
+
       // Exact aggregate DCS counters are the closest IOReport exposes to
       // physical DRAM traffic. Partition DCS counters are summed only if exact
       // aggregate DCS is absent. Client/fabric counters can double-count on
@@ -2566,6 +2992,118 @@ PowerMetrics samplePowerMetrics(int durationMs) {
           }
         }
       }
+      // ANE on macOS 27+ / M5: every PMP ANE channel is a STATE channel
+      // (format 2). IOReportSimpleGetIntegerValue returns garbage (INT64_MIN)
+      // on them, so all parsing below uses the State* getters only.
+      //
+      // Verified bindings on M5 / macOS 27 (idle vs `fm respond --model system`
+      // vs pure CPU load — see --dump-debug):
+      //   PMP / "SOC Floor" / "ANE-AF-BW"   states VMIN,VNOM,VMAX,VOVD,VOVD2.
+      //   PMP / "DCS Floor" / "ANE-DCS-BW"  states F1..F8.
+      //     Both tick at a constant rate over the whole window (residency is a
+      //     true time fraction). Idle and CPU-only load: 100% in the lowest
+      //     state (VMIN / F1). During on-device "system" model inference:
+      //     25-35% above the lowest state. These are the ANE-driven
+      //     performance-floor requests — the only live ANE utilization signal.
+      //   PMP / "AF BW" + "DCS BW" / "ANE0 RD|WR|RD+WR"  32-bucket rate
+      //     histograms ("1GB/s".."32GB/s" residency counters, NOT byte
+      //     accumulators). Counters only tick while the ANE is powered:
+      //     total residency is 0 at idle.
+      //   PMP / "SOC Floor"+"DCS Floor"+"Fast-Die CE" / "ANE0" — the engine
+      //     performance-state channels. They exist but have total residency 0
+      //     on this build (dead counters). Still parsed in case a future
+      //     macOS build populates them; max across channels wins.
+      if (strstr(chn, "ANE") != NULL) {
+        char sub[64] = {0};
+        CFStringRef subgroupRef = IOReportChannelGetSubGroup(item);
+        if (subgroupRef != NULL) {
+          CFStringGetCString(subgroupRef, sub, sizeof(sub), kCFStringEncodingUTF8);
+        }
+        int32_t stateCount = IOReportStateGetCount(item);
+
+        bool isAneFloorChannel =
+            (strcmp(chn, "ANE-AF-BW") == 0 || strcmp(chn, "ANE-DCS-BW") == 0) &&
+            strstr(sub, "Floor") != NULL;
+        bool isAneEngineStateChannel = (strcmp(chn, "ANE0") == 0) &&
+          (strstr(sub, "Floor") != NULL || strstr(sub, "Fast-Die") != NULL ||
+           strstr(sub, "CE") != NULL || strstr(sub, "SOC") != NULL || strstr(sub, "Util") != NULL);
+
+        // Utilization %: time NOT spent in the idle/floor state, from actual
+        // residency deltas. Idle states: OFF/IDLE/DOWN/SLEEP plus the lowest
+        // floor request (VMIN for SOC Floor, F1 for DCS Floor, 0% for Fast-Die CE).
+        if (stateCount > 1 && (isAneFloorChannel || isAneEngineStateChannel)) {
+          int64_t totalTime = 0;
+          int64_t activeTime = 0;
+          for (int32_t s = 0; s < stateCount; s++) {
+            int64_t residency = IOReportStateGetResidency(item, s);
+            totalTime += residency;
+            CFStringRef stateName = IOReportStateGetNameForIndex(item, s);
+            if (stateName != NULL) {
+              char sn[64] = {0};
+              CFStringGetCString(stateName, sn, sizeof(sn), kCFStringEncodingUTF8);
+              if (strcmp(sn, "OFF") != 0 && strcmp(sn, "IDLE") != 0 &&
+                  strcmp(sn, "DOWN") != 0 && strcmp(sn, "SLEEP") != 0 &&
+                  strcmp(sn, "VMIN") != 0 && strcmp(sn, "F1") != 0 &&
+                  strcmp(sn, "0%") != 0) {
+                activeTime += residency;
+              }
+            }
+          }
+          if (totalTime > 0) {
+            double pct = (double)activeTime / (double)totalTime * 100.0;
+            if (pct > metrics.aneActive) {
+              metrics.aneActive = pct;
+            }
+            if (activeTime > 0) {
+              sawAnePmpActivity = true;
+            }
+          }
+        }
+
+        // ANE bandwidth: residency-weighted average of the "AF BW" rate
+        // histogram buckets (bucket names parse as "<N>GB/s"), converted to
+        // bytes over this window. Only "AF BW" is used ("DCS BW" mirrors it
+        // and would double count); "RD+WR" is skipped (sum of RD and WR).
+        // The histogram only ticks while the ANE is powered, so this is the
+        // average rate while powered — at idle the total is 0 and we report 0.
+        if (stateCount > 1 && strcmp(sub, "AF BW") == 0 &&
+            strstr(chn, "RD+WR") == NULL &&
+            (strstr(chn, "RD") != NULL || strstr(chn, "WR") != NULL)) {
+          int64_t tot = 0;
+          double weighted = 0;
+          for (int32_t s = 0; s < stateCount; s++) {
+            int64_t residency = IOReportStateGetResidency(item, s);
+            tot += residency;
+            CFStringRef stateName = IOReportStateGetNameForIndex(item, s);
+            if (stateName != NULL && residency > 0) {
+              char sn[64] = {0};
+              CFStringGetCString(stateName, sn, sizeof(sn), kCFStringEncodingUTF8);
+              weighted += atof(sn) * (double)residency; // "32GB/s" -> 32.0
+            }
+          }
+          if (tot > 0) {
+            double avgGBs = weighted / (double)tot;
+            // Scale by the measured sample window (actualDurationNs), not the
+            // requested durationMs: Go divides these bytes by the measured
+            // window to recover GB/s, so using the same interval here makes
+            // the round trip exact under scheduler jitter (the AMC byte
+            // counters need no scaling — they are real bytes).
+            double sampleSec = (metrics.actualDurationNs > 0)
+                                   ? (double)metrics.actualDurationNs / 1e9
+                                   : (double)durationMs / 1000.0;
+            int64_t bytes = (int64_t)(avgGBs * 1e9 * sampleSec);
+            // max, not +=: there is exactly one RD and one WR channel in
+            // "AF BW", but the channel may appear more than once in a merged
+            // subscription — summing would double count.
+            if (strstr(chn, "RD") != NULL) {
+              if (bytes > pmpAneReadBytes) pmpAneReadBytes = bytes;
+            } else {
+              if (bytes > pmpAneWriteBytes) pmpAneWriteBytes = bytes;
+            }
+            sawAnePmpActivity = true;
+          }
+        }
+      }
     }
   }
 
@@ -2595,6 +3133,17 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     metrics.sClusterActive = sClusterActive;
     metrics.sClusterFreqMHz = sClusterFreq;
   }
+
+  // Prefer whole-CPU energy totals; fall back to the sum of cluster-type
+  // channels when only those exist (newer chip/OS naming generations).
+  metrics.cpuPower = (cpuTotalEnergyW > 0) ? cpuTotalEnergyW : cpuTypedEnergyW;
+  // GPU: "GPU Energy" is the canonical channel; the bare "GPU" alias is used
+  // only when the canonical one produced nothing.
+  metrics.gpuPower += (gpuEnergyNamedW > 0) ? gpuEnergyNamedW : gpuEnergyAliasW;
+  // ANE/DRAM: per-block counters (summed across dies) are canonical; the
+  // aggregate "... Energy" aliases apply only when no block produced data.
+  metrics.anePower += (aneBlockEnergyW > 0) ? aneBlockEnergyW : aneNamedEnergyW;
+  metrics.dramPower += (dramBlockEnergyW > 0) ? dramBlockEnergyW : dramNamedEnergyW;
 
   if (hasAmcExactDcsDirectional) {
     metrics.dramReadBytes = amcExactDcsReadBytes;
@@ -2682,6 +3231,20 @@ PowerMetrics samplePowerMetrics(int durationMs) {
       startBgCalibrationOnce();
   }
 
+  // ANE traffic bytes, by source priority:
+  //   1. AMC Stats "ANE<n> RD/WR" byte counters — exact bytes; produce data on
+  //      M1-M4 (including macOS 27, where they survive the energy-counter
+  //      breakage) but are kernel-blocked on M5+.
+  //   2. PMP "AF BW" ANE0 RD/WR rate-histogram estimate — the reliable signal
+  //      on macOS 27+/M5 where AMC is unavailable.
+  if (amcAneReadBytes + amcAneWriteBytes > 0) {
+    metrics.aneReadBytes = amcAneReadBytes;
+    metrics.aneWriteBytes = amcAneWriteBytes;
+  } else {
+    metrics.aneReadBytes = pmpAneReadBytes;
+    metrics.aneWriteBytes = pmpAneWriteBytes;
+  }
+
   // Fallback: estimate DRAM BW from DRAM power after local calibration.
   // DRAM power = static (leakage/refresh) + dynamic (data transfer).
   // Only dynamic power correlates with bandwidth, so subtract idle baseline.
@@ -2723,6 +3286,12 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     metrics.dramReadBytes = amcRequestReadBytes;
     metrics.dramWriteBytes = amcRequestWriteBytes;
   }
+
+  // ANE power is taken strictly from the Energy Model "ANE" channel (if present
+  // and non-zero). On macOS 27 / M5 it reads 0 for on-device inference; no
+  // synthetic or invented power is reported — only actual IOReport numbers.
+  // ANE utilization %% comes from the PMP ANE-AF-BW / ANE-DCS-BW floor
+  // residencies parsed above (sawAnePmpActivity tracks positive evidence).
 
   // Defer readSocTemperature — try to derive CPU/GPU temps from HID per-core data first.
   // This avoids a redundant HID service enumeration on systems where HID provides good data.

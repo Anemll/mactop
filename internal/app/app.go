@@ -6,14 +6,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-
-	"sync"
 
 	"github.com/mattn/go-runewidth"
 	ui "github.com/metaspartan/gotui/v5"
@@ -97,13 +97,14 @@ func setupUI() {
 
 	mainBlock = ui.NewBlock()
 	mainBlock.BorderRounded = true
-	mainBlock.Title = i18n.T("TUI_MactopTitle")
 	mainBlock.TitleRight = " " + version + " "
 	mainBlock.TitleAlignment = ui.AlignLeft
 	mainBlock.TitleBottomLeft = fmt.Sprintf(i18n.T("TUI_LayoutInfo"), currentLayoutNum, totalLayouts, currentColorName)
 	mainBlock.TitleBottom = i18n.T("TUI_InfoLayoutColorExit")
 	mainBlock.TitleBottomAlignment = ui.AlignCenter
 	mainBlock.TitleBottomRight = fmt.Sprintf(" -/+ %dms ", updateInterval)
+
+	updateMainTitleWithHardware()
 
 	termWidth, termHeight := ui.TerminalDimensions()
 	UpdateCachedTerminalDimensions(termWidth, termHeight)
@@ -120,6 +121,30 @@ func setupUI() {
 	powerUsageHistory = make([]float64, numPoints)
 	memBWReadHistory = make([]float64, numPoints)
 	memBWWriteHistory = make([]float64, numPoints)
+	aneUsageHistory = make([]float64, numPoints)
+	dramReadHistory = make([]float64, numPoints)
+	dramWriteHistory = make([]float64, numPoints)
+	aneReadBwHistory = make([]float64, numPoints)
+	aneWriteBwHistory = make([]float64, numPoints)
+
+	// Per-block power histories for history_soc layout
+	cpuPowerHistory = make([]float64, numPoints)
+	gpuPowerHistory = make([]float64, numPoints)
+	anePowerHistory = make([]float64, numPoints)
+	dramPowerHistory = make([]float64, numPoints)
+
+	// Peak + Average for SoC usage histories
+	cpuPeakHistory = make([]float64, numPoints)
+	gpuPeakHistory = make([]float64, numPoints)
+	anePeakHistory = make([]float64, numPoints)
+	bwPeakHistory = make([]float64, numPoints)
+
+	// Effective GPU load history — recorded at sample time using the frequency of that moment.
+	// This is the correct way so the graph doesn't jump when frequency changes.
+	gpuEffectiveHistory = make([]float64, numPoints)
+
+	// SSD read history for history_soc bottom section
+	ssdReadHistory = make([]float64, numPoints)
 
 	sparkline = w.NewSparkline()
 	sparkline.MaxHeight = 100
@@ -178,6 +203,31 @@ func setupUI() {
 	memBWHistoryChart.ShowRightAxis = true
 	memBWHistoryChart.LineColors = []ui.Color{ui.ColorCyan, ui.ColorMagenta}
 
+	aneHistoryChart = w.NewStepChart()
+	aneHistoryChart.Title = i18n.T("TUI_ANEUsageHistory")
+	aneHistoryChart.ShowAxes = false
+	aneHistoryChart.ShowRightAxis = true
+	aneHistoryChart.LineColors = []ui.Color{ui.ColorMagenta}
+
+	bandwidthHistoryChart = w.NewStepChart()
+	bandwidthHistoryChart.Title = i18n.T("TUI_DRAMBandwidthHistory")
+	bandwidthHistoryChart.ShowAxes = false
+	bandwidthHistoryChart.ShowRightAxis = true
+	bandwidthHistoryChart.LineColors = []ui.Color{ui.ColorCyan, ui.ColorYellow} // read, write
+
+	// Multi-component power history for the SoC layout
+	socPowerHistoryChart = w.NewStepChart()
+	socPowerHistoryChart.Title = i18n.T("TUI_SoCPowerHistory")
+	socPowerHistoryChart.ShowAxes = false
+	socPowerHistoryChart.ShowRightAxis = true
+	socPowerHistoryChart.LineColors = []ui.Color{ui.ColorGreen, ui.ColorBlue, ui.ColorMagenta, ui.ColorYellow}
+
+	ssdReadHistoryChart = w.NewStepChart()
+	ssdReadHistoryChart.Title = i18n.T("TUI_SSDReadHistory")
+	ssdReadHistoryChart.ShowAxes = false
+	ssdReadHistoryChart.ShowRightAxis = true
+	ssdReadHistoryChart.LineColors = []ui.Color{ui.ColorCyan}
+
 	cpuCoreWidget = NewCPUCoreWidget(appleSiliconModel)
 	coreSummary := FormatCoreSummary(cpuCoreWidget.eCoreCount, cpuCoreWidget.pCoreCount, cpuCoreWidget.sCoreCount)
 	totalCPUCores := cpuCoreWidget.eCoreCount + cpuCoreWidget.pCoreCount + cpuCoreWidget.sCoreCount
@@ -204,6 +254,46 @@ func setupUI() {
 	_ = confirmModal.AddButton(i18n.T("TUI_ConfirmNo"), func() {
 		// Callback logic
 	})
+}
+
+func updateMainTitleWithHardware() {
+	info := getSOCInfo()
+
+	model := info.Name
+	if model == "" {
+		model = i18n.T("TUI_UnknownModel")
+	}
+
+	// CPU cores string (with E/P/S breakdown when available)
+	cpuStr := fmt.Sprintf("%dC", info.CoreCount)
+	if info.ECoreCount > 0 || info.PCoreCount > 0 || info.SCoreCount > 0 {
+		parts := []string{}
+		if info.ECoreCount > 0 {
+			parts = append(parts, fmt.Sprintf("%dE", info.ECoreCount))
+		}
+		if info.PCoreCount > 0 {
+			parts = append(parts, fmt.Sprintf("%dP", info.PCoreCount))
+		}
+		if info.SCoreCount > 0 {
+			parts = append(parts, fmt.Sprintf("%dS", info.SCoreCount))
+		}
+		if len(parts) > 0 {
+			cpuStr = fmt.Sprintf("%dC (%s)", info.CoreCount, strings.Join(parts, "+"))
+		}
+	}
+
+	gpuStr := ""
+	if info.GPUCoreCount > 0 {
+		gpuStr = fmt.Sprintf(" • %d GPU", info.GPUCoreCount)
+	}
+
+	ramStr := ""
+	ramGB := getTotalRAMGB()
+	if ramGB > 0 {
+		ramStr = fmt.Sprintf(" • %d GB", ramGB)
+	}
+
+	mainBlock.Title = fmt.Sprintf(" mactop  •  %s  •  %s%s%s ", model, cpuStr, gpuStr, ramStr)
 }
 
 func updateModelText() {
@@ -878,6 +968,15 @@ func updateCPUUI(cpuMetrics CPUMetrics) {
 	memoryGauge.Percent = int(memoryPercent)
 
 	updateMemoryHistory(memoryMetrics)
+
+	// New SoC history charts (for history_soc layout)
+	// Bandwidth first: the ANE history chart derives its bandwidth-mode
+	// series from aneRead/WriteBwHistory, so they must hold this tick's
+	// values before renderANEHistoryChart runs.
+	updateBandwidthHistory(cpuMetrics)
+	updateANEHistory(cpuMetrics)
+	updateSoCPowerHistory(cpuMetrics)
+
 	if len(cpuMetrics.CoreUsages) > 0 {
 		if currentConfig.Theme == "1977" {
 			update1977GaugeColors()
@@ -886,31 +985,40 @@ func updateCPUUI(cpuMetrics CPUMetrics) {
 }
 
 func updateCPUHistory(totalUsage float64) {
-	// Update CPU history StepChart
+	// Update CPU history StepChart (raw value)
 	for i := 0; i < len(cpuUsageHistory)-1; i++ {
 		cpuUsageHistory[i] = cpuUsageHistory[i+1]
+		cpuPeakHistory[i] = cpuPeakHistory[i+1]
 	}
 	cpuUsageHistory[len(cpuUsageHistory)-1] = totalUsage
 
+	// Decaying peak (slow decay when below current peak)
+	peakDecay := 0.98
+	if len(cpuPeakHistory) > 1 {
+		prevPeak := cpuPeakHistory[len(cpuPeakHistory)-2]
+		newPeak := math.Max(totalUsage, prevPeak*peakDecay)
+		cpuPeakHistory[len(cpuPeakHistory)-1] = newPeak
+	} else {
+		cpuPeakHistory[len(cpuPeakHistory)-1] = totalUsage
+	}
+
 	if cpuHistoryChart != nil {
 		termWidth, _ := GetCachedTerminalDimensions()
-		// CPU Chart is usually half width in LayoutHistoryFull
 		visibleWidth := (termWidth / 2) - 4
 		if visibleWidth <= 0 || visibleWidth > len(cpuUsageHistory) {
 			visibleWidth = len(cpuUsageHistory)
 		}
 		if visibleWidth > 0 {
-			visibleData := cpuUsageHistory[len(cpuUsageHistory)-visibleWidth:]
+			visibleRaw := cpuUsageHistory[len(cpuUsageHistory)-visibleWidth:]
+			visiblePeak := cpuPeakHistory[len(cpuPeakHistory)-visibleWidth:]
 
-			// Calculate max value in visible data for adaptive scaling
 			maxVal := 0.0
-			for _, v := range visibleData {
+			for _, v := range visibleRaw {
 				if v > maxVal {
 					maxVal = v
 				}
 			}
 
-			// Adaptive Scale: Snap to 25%, 50%, or 100%
 			scaleMax := 100.0
 			if maxVal <= 25.0 {
 				scaleMax = 25.0
@@ -918,10 +1026,23 @@ func updateCPUHistory(totalUsage float64) {
 				scaleMax = 50.0
 			}
 
-			cpuHistoryChart.Data = [][]float64{visibleData}
+			// In history_soc: single current value line + peak number in title only
+			if currentConfig.DefaultLayout == LayoutHistorySoC {
+				currentPeak := 0.0
+				if len(visiblePeak) > 0 {
+					currentPeak = visiblePeak[len(visiblePeak)-1]
+				}
+				cpuHistoryChart.Data = [][]float64{visibleRaw}
+				cpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.CPU }, ui.ColorYellow)} // CPU color for SoC
+				cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryPeak"), totalUsage, currentPeak)
+				cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
+			} else {
+				cpuHistoryChart.Data = [][]float64{visibleRaw}
+				cpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.CPU }, ui.ColorGreen)}
+				cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryDetail"), totalUsage)
+				cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
+			}
 			cpuHistoryChart.MaxVal = scaleMax
-			cpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", totalUsage)}
-			cpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_CPUHistoryDetail"), totalUsage)
 		}
 	}
 }
@@ -942,6 +1063,9 @@ func updateMemoryHistory(memoryMetrics MemoryMetrics) {
 	if memoryHistoryChart != nil {
 		termWidth, _ := GetCachedTerminalDimensions()
 		visibleWidth := (termWidth / 2) - 4 // Half width, account for borders
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			visibleWidth = (termWidth / 3) - 4
+		}
 		if visibleWidth <= 0 || visibleWidth > len(memoryUsedHistory) {
 			visibleWidth = len(memoryUsedHistory)
 		}
@@ -961,11 +1085,382 @@ func updateMemoryHistory(memoryMetrics MemoryMetrics) {
 	updateMemBandwidthHistory()
 }
 
+func updateANEHistory(cpuMetrics CPUMetrics) {
+	// Same utilization source as the ANE gauge: PMP residency (macOS 27/M5)
+	// -> Energy Model power estimate (macOS 26) -> bandwidth activity
+	// estimate (M1-M4 on macOS 27). Keeps the history chart consistent with
+	// the gauge instead of reading 0 where only bandwidth is available.
+	anePct := aneUtilizationPercent(cpuMetrics)
+	aneWatts := cpuMetrics.ANEW
+
+	for i := 0; i < len(aneUsageHistory)-1; i++ {
+		aneUsageHistory[i] = aneUsageHistory[i+1]
+		anePeakHistory[i] = anePeakHistory[i+1]
+	}
+	aneUsageHistory[len(aneUsageHistory)-1] = anePct
+
+	// Decaying peak for ANE
+	peakDecay := 0.98
+	if len(anePeakHistory) > 1 {
+		prevPeak := anePeakHistory[len(anePeakHistory)-2]
+		anePeakHistory[len(anePeakHistory)-1] = math.Max(anePct, prevPeak*peakDecay)
+	} else {
+		anePeakHistory[len(anePeakHistory)-1] = anePct
+	}
+
+	renderANEHistoryChart(anePct, aneWatts, cpuMetrics.ANEBW, aneBWLabelMode(cpuMetrics))
+}
+
+// aneVisibleSeries returns the plotted ANE utilization window. In bandwidth
+// mode the percentages are derived at render time from the stored physical
+// GB/s histories against the *current* adaptive reference: stored percentages
+// were computed against whatever reference existed when each was pushed, so
+// after the reference ratchets (e.g. during a load ramp) they stop being
+// comparable — a 7x bandwidth ramp would paint as a flat 100% plateau.
+func aneVisibleSeries(visibleWidth int, bwMode bool) []float64 {
+	// Re-derive from physical bandwidth only for the tier-3 adaptive-bandwidth
+	// estimate (M1-M4 on macOS 27), whose stored percentages go stale as the
+	// reference ratchets. Residency (tier 1, M5) and power (tier 2, macOS 26)
+	// percentages are against a fixed scale and stay comparable across ticks,
+	// so plot them as stored — re-deriving residency from bandwidth would
+	// diverge from the gauge, which reads the residency tier.
+	if !bwMode || aneResidencyLatched.Load() {
+		return aneUsageHistory[len(aneUsageHistory)-visibleWidth:]
+	}
+	ref := max(math.Float64frombits(maxANEBWSeenBits.Load()), aneBWRefFloorGBs)
+	rd := aneReadBwHistory[len(aneReadBwHistory)-visibleWidth:]
+	wr := aneWriteBwHistory[len(aneWriteBwHistory)-visibleWidth:]
+	out := make([]float64, visibleWidth)
+	for i := range out {
+		pct := (rd[i] + wr[i]) / ref * 100
+		if pct > 100 {
+			pct = 100
+		}
+		out[i] = pct
+	}
+	return out
+}
+
+// historyLineColor returns the active custom-theme color for a history chart
+// component, or the fallback default when no custom theme is set. Per-tick
+// LineColors assignments must route through this so they don't clobber the
+// colors applyCustomWidgetColors applied (same pattern as updateSoCPowerHistory).
+func historyLineColor(pick func(*CustomThemeConfig) string, fallback ui.Color) ui.Color {
+	if currentConfig.CustomTheme == nil {
+		return fallback
+	}
+	fg := GetThemeColorWithLightMode(currentConfig.Theme, IsLightMode)
+	return resolveCustomColor(pick(currentConfig.CustomTheme), fg)
+}
+
+// seriesMax returns the largest value in the series (0 for an empty one).
+func seriesMax(series []float64) float64 {
+	peak := 0.0
+	for _, v := range series {
+		if v > peak {
+			peak = v
+		}
+	}
+	return peak
+}
+
+func renderANEHistoryChart(anePct, aneWatts, aneBW float64, bwMode bool) {
+	if aneHistoryChart == nil {
+		return
+	}
+	termWidth, _ := GetCachedTerminalDimensions()
+	visibleWidth := (termWidth / 2) - 4
+	if visibleWidth <= 0 || visibleWidth > len(aneUsageHistory) {
+		visibleWidth = len(aneUsageHistory)
+	}
+	if visibleWidth <= 0 {
+		return
+	}
+	visibleRaw := aneVisibleSeries(visibleWidth, bwMode)
+	visiblePeak := anePeakHistory[len(anePeakHistory)-visibleWidth:]
+
+	maxVal := 0.0
+	for _, v := range visibleRaw {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	scaleMax := 100.0
+	if maxVal <= 25.0 {
+		scaleMax = 25.0
+	} else if maxVal <= 50.0 {
+		scaleMax = 50.0
+	}
+
+	aneHistoryChart.Data = [][]float64{visibleRaw}
+	aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
+	if currentConfig.DefaultLayout == LayoutHistorySoC {
+		// Peak: in bandwidth mode use the max of the visible window — ANE
+		// load is typically flat at saturation, so the decaying tracker
+		// collapses to the current value within two ticks and the label
+		// degenerates to "Peak == current". In watts/residency modes keep
+		// the decaying tracker, consistent with the CPU/GPU charts.
+		currentPeak := 0.0
+		if bwMode {
+			currentPeak = seriesMax(visibleRaw)
+		} else if len(visiblePeak) > 0 {
+			currentPeak = visiblePeak[len(visiblePeak)-1]
+		}
+		aneHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.ANE }, ui.ColorRed)} // ANE red in SoC
+		if bwMode {
+			// macOS 27+: the ANE energy counter is dead, so a wattage reading
+			// would always be a meaningless 0.00W — show bandwidth instead.
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryPeakBW"), anePct, currentPeak, aneBW)
+		} else {
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryPeak"), anePct, currentPeak, aneWatts)
+		}
+	} else {
+		aneHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.ANE }, ui.ColorMagenta)}
+		if bwMode {
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetailBW"), anePct, aneBW)
+		} else {
+			aneHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_ANEHistoryDetail"), anePct, aneWatts)
+		}
+	}
+	aneHistoryChart.MaxVal = scaleMax
+}
+
+func updateBandwidthHistory(cpuMetrics CPUMetrics) {
+	readGBs := cpuMetrics.DRAMReadBW
+	writeGBs := cpuMetrics.DRAMWriteBW
+	aneReadGBs := cpuMetrics.ANEReadBW
+	aneWriteGBs := cpuMetrics.ANEWriteBW
+
+	for i := 0; i < len(dramReadHistory)-1; i++ {
+		dramReadHistory[i] = dramReadHistory[i+1]
+		dramWriteHistory[i] = dramWriteHistory[i+1]
+		aneReadBwHistory[i] = aneReadBwHistory[i+1]
+		aneWriteBwHistory[i] = aneWriteBwHistory[i+1]
+		bwPeakHistory[i] = bwPeakHistory[i+1]
+	}
+	dramReadHistory[len(dramReadHistory)-1] = readGBs
+	dramWriteHistory[len(dramWriteHistory)-1] = writeGBs
+	aneReadBwHistory[len(aneReadBwHistory)-1] = aneReadGBs
+	aneWriteBwHistory[len(aneWriteBwHistory)-1] = aneWriteGBs
+
+	combined := readGBs + writeGBs
+
+	// Decaying peak across the plotted series: DRAM total and the ANE fabric
+	// pair. ANE traffic is normally a subset of DRAM total, but stalled DCS
+	// counters (macOS 27 beta) can report DRAM 0 while ANE histograms still
+	// flow — the peak label must bound whatever is actually drawn.
+	peakInput := math.Max(combined, math.Max(aneReadGBs, aneWriteGBs))
+	peakDecay := 0.98
+	if len(bwPeakHistory) > 1 {
+		prevPeak := bwPeakHistory[len(bwPeakHistory)-2]
+		bwPeakHistory[len(bwPeakHistory)-1] = math.Max(peakInput, prevPeak*peakDecay)
+	} else {
+		bwPeakHistory[len(bwPeakHistory)-1] = peakInput
+	}
+
+	renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs)
+}
+
+// bandwidthScaleMax returns the adaptive Y-axis maximum for the bandwidth
+// history chart: 1.2x the largest visible sample across all series, floored
+// at 1 GB/s.
+func bandwidthScaleMax(series ...[]float64) float64 {
+	maxVal := 0.0
+	for _, vals := range series {
+		for _, v := range vals {
+			if v > maxVal {
+				maxVal = v
+			}
+		}
+	}
+	if maxVal < 1.0 {
+		maxVal = 1.0
+	}
+	return maxVal * 1.2
+}
+
+func renderBandwidthHistoryChart(readGBs, writeGBs, aneReadGBs, aneWriteGBs float64) {
+	if bandwidthHistoryChart == nil {
+		return
+	}
+	{
+		termWidth, _ := GetCachedTerminalDimensions()
+		visibleWidth := (termWidth / 2) - 4
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			// One-third-width column in the bottom row — match the adjacent
+			// memory and SSD charts' time window.
+			visibleWidth = (termWidth / 3) - 4
+		}
+		if visibleWidth <= 0 || visibleWidth > len(dramReadHistory) {
+			visibleWidth = len(dramReadHistory)
+		}
+
+		visibleRead := dramReadHistory[len(dramReadHistory)-visibleWidth:]
+		visibleWrite := dramWriteHistory[len(dramWriteHistory)-visibleWidth:]
+		visibleAneRead := aneReadBwHistory[len(aneReadBwHistory)-visibleWidth:]
+		visibleAneWrite := aneWriteBwHistory[len(aneWriteBwHistory)-visibleWidth:]
+		visiblePeak := bwPeakHistory[len(bwPeakHistory)-visibleWidth:]
+
+		// Scale to the drawn series only: bwPeakHistory decays slowly and is
+		// not rendered, so including it would pin the Y-axis high long after a
+		// spike and flatten the live lines.
+		scaleSeries := [][]float64{visibleRead, visibleWrite, visibleAneRead, visibleAneWrite}
+
+		// history_soc also draws a combined Read+Write total line — it must
+		// participate in scaling or it clips against the chart top whenever
+		// read and write are both high in the same sample.
+		var visibleTotal []float64
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			visibleTotal = make([]float64, len(visibleRead))
+			for i := range visibleRead {
+				visibleTotal[i] = visibleRead[i] + visibleWrite[i]
+			}
+			scaleSeries = append(scaleSeries, visibleTotal)
+		}
+		scaleMax := bandwidthScaleMax(scaleSeries...)
+
+		// In history_soc layout, force a minimum visible scale so the graph
+		// doesn't look completely dead when bandwidth is low (common even with high GPU/ANE load)
+		if currentConfig.DefaultLayout == LayoutHistorySoC && scaleMax < 8.0 {
+			scaleMax = 8.0
+		}
+
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			currentPeak := 0.0
+			if len(visiblePeak) > 0 {
+				currentPeak = visiblePeak[len(visiblePeak)-1]
+			}
+
+			// To make Write (red) visible on top:
+			// Total (bottom, violet), Read (blue), Write (red), then the ANE
+			// fabric BW pair (green/yellow) as the top layers.
+			bandwidthHistoryChart.Data = [][]float64{visibleTotal, visibleRead, visibleWrite, visibleAneRead, visibleAneWrite}
+			bandwidthHistoryChart.LineColors = []ui.Color{ui.ColorMagenta, ui.ColorBlue, ui.ColorRed, ui.ColorGreen, ui.ColorYellow}
+			total := readGBs + writeGBs
+			bandwidthHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_BandwidthHistoryPeak"), readGBs, writeGBs, aneReadGBs, aneWriteGBs, currentPeak)
+			bandwidthHistoryChart.DataLabels = []string{
+				fmt.Sprintf("Tot:%.1f", total),
+				fmt.Sprintf("R:%.1f", readGBs),
+				fmt.Sprintf("W:%.1f", writeGBs),
+				fmt.Sprintf("AR:%.1f", aneReadGBs),
+				fmt.Sprintf("AW:%.1f", aneWriteGBs),
+			}
+		} else {
+			bandwidthHistoryChart.Data = [][]float64{visibleRead, visibleWrite, visibleAneRead, visibleAneWrite}
+			bandwidthHistoryChart.LineColors = []ui.Color{ui.ColorCyan, ui.ColorYellow, ui.ColorGreen, ui.ColorMagenta}
+			total := readGBs + writeGBs
+			bandwidthHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_BandwidthHistoryDetail"), readGBs, writeGBs, total) +
+				fmt.Sprintf(" ANE R:%.1f W:%.1f", aneReadGBs, aneWriteGBs)
+			bandwidthHistoryChart.DataLabels = []string{
+				fmt.Sprintf("R:%.1f", readGBs),
+				fmt.Sprintf("W:%.1f", writeGBs),
+				fmt.Sprintf("AR:%.1f", aneReadGBs),
+				fmt.Sprintf("AW:%.1f", aneWriteGBs),
+			}
+		}
+		bandwidthHistoryChart.MaxVal = scaleMax
+	}
+}
+
+// updateSoCPowerHistory maintains rolling histories for individual power rails
+// (CPU, GPU, ANE, DRAM) and feeds the multi-line socPowerHistoryChart.
+func updateSoCPowerHistory(cpuMetrics CPUMetrics) {
+	for i := 0; i < len(cpuPowerHistory)-1; i++ {
+		cpuPowerHistory[i] = cpuPowerHistory[i+1]
+		gpuPowerHistory[i] = gpuPowerHistory[i+1]
+		anePowerHistory[i] = anePowerHistory[i+1]
+		dramPowerHistory[i] = dramPowerHistory[i+1]
+	}
+	cpuPowerHistory[len(cpuPowerHistory)-1] = cpuMetrics.CPUW
+	gpuPowerHistory[len(gpuPowerHistory)-1] = cpuMetrics.GPUW + cpuMetrics.GPUSRAMW
+	anePowerHistory[len(anePowerHistory)-1] = cpuMetrics.ANEW
+	dramPowerHistory[len(dramPowerHistory)-1] = cpuMetrics.DRAMW
+
+	if socPowerHistoryChart != nil {
+		termWidth, _ := GetCachedTerminalDimensions()
+		visibleWidth := termWidth - 4
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			// Half-width column (row 2, beside the ANE chart) — match the
+			// neighboring CPU/GPU/ANE charts' time window.
+			visibleWidth = (termWidth / 2) - 4
+		}
+		if visibleWidth <= 0 || visibleWidth > len(cpuPowerHistory) {
+			visibleWidth = len(cpuPowerHistory)
+		}
+
+		visCPU := cpuPowerHistory[len(cpuPowerHistory)-visibleWidth:]
+		visGPU := gpuPowerHistory[len(gpuPowerHistory)-visibleWidth:]
+		visANE := anePowerHistory[len(anePowerHistory)-visibleWidth:]
+		visDRAM := dramPowerHistory[len(dramPowerHistory)-visibleWidth:]
+
+		// Find max across all for scaling
+		maxVal := 0.0
+		for i := range visCPU {
+			if visCPU[i] > maxVal {
+				maxVal = visCPU[i]
+			}
+			if visGPU[i] > maxVal {
+				maxVal = visGPU[i]
+			}
+			if visANE[i] > maxVal {
+				maxVal = visANE[i]
+			}
+			if visDRAM[i] > maxVal {
+				maxVal = visDRAM[i]
+			}
+		}
+		if maxVal < 0.5 {
+			maxVal = 0.5
+		}
+
+		// ANE last so its red line draws on top of overlapping series
+		// (at idle all rails sit near 0 and later series overpaint earlier ones).
+		socPowerHistoryChart.Data = [][]float64{visCPU, visGPU, visDRAM, visANE}
+		socPowerHistoryChart.MaxVal = maxVal * 1.15
+		// ANE is omitted from the labels and title entirely when its energy
+		// counter is provably dead (macOS 27+) — there is no reading to show.
+		// The (flat) series itself stays plotted so the chart structure is
+		// stable, and the label/segment return automatically if a future OS
+		// build revives the counter (aneBWLabelMode flips off when watts flow).
+		aneDead := aneBWLabelMode(cpuMetrics)
+		labels := []string{
+			fmt.Sprintf("CPU:%.1f", cpuMetrics.CPUW),
+			fmt.Sprintf("GPU:%.1f", cpuMetrics.GPUW+cpuMetrics.GPUSRAMW),
+			fmt.Sprintf("DRAM:%.1f", cpuMetrics.DRAMW),
+		}
+		if !aneDead {
+			// ANE is the last series, so omitting its label leaves the
+			// CPU/GPU/DRAM labels correctly aligned with their series.
+			labels = append(labels, fmt.Sprintf("ANE:%.1f", cpuMetrics.ANEW))
+		}
+		socPowerHistoryChart.DataLabels = labels
+		// Series order: CPU, GPU, DRAM, ANE (ANE last so its red line draws on
+		// top). Resolve per-component custom theme colors when set instead of
+		// clobbering them with hard-coded defaults every tick.
+		cpuC, gpuC, memC := ui.ColorYellow, ui.ColorGreen, ui.ColorCyan
+		if currentConfig.CustomTheme != nil {
+			fg := GetThemeColorWithLightMode(currentConfig.Theme, IsLightMode)
+			cpuC = resolveCustomColor(currentConfig.CustomTheme.CPU, fg)
+			gpuC = resolveCustomColor(currentConfig.CustomTheme.GPU, fg)
+			memC = resolveCustomColor(currentConfig.CustomTheme.Memory, fg)
+		}
+		socPowerHistoryChart.LineColors = []ui.Color{cpuC, gpuC, memC, ui.ColorRed}
+
+		totalPower := cpuMetrics.CPUW + cpuMetrics.GPUW + cpuMetrics.GPUSRAMW + cpuMetrics.ANEW + cpuMetrics.DRAMW
+		if aneDead {
+			socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetailNoANE"),
+				totalPower, cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
+		} else {
+			socPowerHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SoCPowerDetail"),
+				totalPower, fmt.Sprintf("%.1fW", cpuMetrics.ANEW), cpuMetrics.CPUW, cpuMetrics.GPUW+cpuMetrics.GPUSRAMW, cpuMetrics.DRAMW)
+		}
+	}
+}
+
 func updateMemBandwidthHistory() {
 	readBW := lastCPUMetrics.DRAMReadBW
 	writeBW := lastCPUMetrics.DRAMWriteBW
 	combinedBW := lastCPUMetrics.DRAMBWCombined
-
 	for i := 0; i < len(memBWReadHistory)-1; i++ {
 		memBWReadHistory[i] = memBWReadHistory[i+1]
 		memBWWriteHistory[i] = memBWWriteHistory[i+1]
@@ -1051,11 +1546,26 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 		cpuFreqStr,
 		formatTemp(cpuMetrics.CPUTemp),
 	)
-	aneUtil := float64(cpuMetrics.ANEW / 1 / 8.0 * 100)
+	// Utilization priority (see aneUtilizationPercent): PMP residency-based %
+	// (macOS 27/M5) -> Energy Model power estimate (macOS 26) -> AMC/PMP
+	// bandwidth activity estimate (M1-M4 on macOS 27).
+	aneUtil := aneUtilizationPercent(cpuMetrics)
+	// Bandwidth-form label whenever the ANE power channel yields nothing —
+	// session-latched (see aneBWLabelMode) so the label doesn't flip back to
+	// "@ 0.00 W" when the ANE goes idle on an OS whose watts are never nonzero.
+	bwMode := aneBWLabelMode(cpuMetrics)
 	if isCompactLayout() {
-		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeCompact"), cpuMetrics.ANEW)
+		if bwMode {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBWCompact"), cpuMetrics.ANEBW)
+		} else {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeCompact"), cpuMetrics.ANEW)
+		}
 	} else {
-		aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGauge"), aneUtil, cpuMetrics.ANEW)
+		if bwMode {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBW"), aneUtil, cpuMetrics.ANEBW)
+		} else {
+			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGauge"), aneUtil, cpuMetrics.ANEW)
+		}
 	}
 	aneGauge.Percent = int(aneUtil)
 }
@@ -1063,24 +1573,37 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 func updatePowerChartText(cpuMetrics CPUMetrics, thermalStr string) {
 	PowerChart.Title = i18n.T("TUI_PowerUsage")
 
+	// When the ANE energy counter is dead (macOS 27+), a wattage reading
+	// would always be a meaningless 0.00 W — show fabric bandwidth instead,
+	// matching the ANE gauge.
+	bwMode := aneBWLabelMode(cpuMetrics)
+
 	if isCompactLayout() {
+		aneStr := fmt.Sprintf("%.1fW", cpuMetrics.ANEW)
+		if bwMode {
+			aneStr = fmt.Sprintf("%.1fGB/s", cpuMetrics.ANEBW)
+		}
 		PowerChart.Title = i18n.T("Metrics_PowerChartTitleCompact")
 		PowerChart.Text = fmt.Sprintf(i18n.T("Metrics_PowerChartTextCompact"),
 			cpuMetrics.CPUW,
 			cpuMetrics.GPUW+cpuMetrics.GPUSRAMW,
-			cpuMetrics.ANEW,
+			aneStr,
 			cpuMetrics.DRAMW,
 			cpuMetrics.PackageW,
 			thermalStr,
 		)
 	} else {
+		aneStr := fmt.Sprintf("%.2f W", cpuMetrics.ANEW)
+		if bwMode {
+			aneStr = fmt.Sprintf("%.2f GB/s", cpuMetrics.ANEBW)
+		}
 		uptimeSeconds, _ := GetNativeUptime()
 		uptimeStr := formatTime(float64(uptimeSeconds))
 
 		PowerChart.Text = fmt.Sprintf(i18n.T("Metrics_PowerChartText"),
 			cpuMetrics.CPUW,
 			cpuMetrics.GPUW+cpuMetrics.GPUSRAMW,
-			cpuMetrics.ANEW,
+			aneStr,
 			cpuMetrics.DRAMW,
 			cpuMetrics.SystemW,
 			cpuMetrics.PackageW,
@@ -1120,8 +1643,33 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 
 	for i := 0; i < len(gpuValues)-1; i++ {
 		gpuValues[i] = gpuValues[i+1]
+		gpuPeakHistory[i] = gpuPeakHistory[i+1]
+		gpuEffectiveHistory[i] = gpuEffectiveHistory[i+1]
 	}
 	gpuValues[len(gpuValues)-1] = gpuMetrics.ActivePercent
+
+	// Compute effective load *at this moment* using the frequency of this sample
+	effectiveNow := gpuMetrics.ActivePercent
+	if gpuMetrics.FreqMHz > 0 {
+		maxFreq := GetGPUMaxFreqMHz()
+		if maxFreq > 0 {
+			eff := gpuMetrics.ActivePercent * (float64(gpuMetrics.FreqMHz) / float64(maxFreq))
+			if eff > 100 {
+				eff = 100
+			}
+			effectiveNow = eff
+		}
+	}
+	gpuEffectiveHistory[len(gpuEffectiveHistory)-1] = effectiveNow
+
+	// Decaying peak for GPU (based on raw load)
+	peakDecay := 0.98
+	if len(gpuPeakHistory) > 1 {
+		prevPeak := gpuPeakHistory[len(gpuPeakHistory)-2]
+		gpuPeakHistory[len(gpuPeakHistory)-1] = math.Max(gpuMetrics.ActivePercent, prevPeak*peakDecay)
+	} else {
+		gpuPeakHistory[len(gpuPeakHistory)-1] = gpuMetrics.ActivePercent
+	}
 
 	var sum float64
 	count := 0
@@ -1137,37 +1685,62 @@ func updateGPUUI(gpuMetrics GPUMetrics) {
 	}
 
 	gpuSparkline.Data = gpuValues
-	gpuSparkline.MaxVal = 100 // GPU usage is 0-100%
+	gpuSparkline.MaxVal = 100
 	if isCompactLayout() {
 		gpuSparklineGroup.Title = fmt.Sprintf(i18n.T("Metrics_GPUSparklineCompact"), int(gpuMetrics.ActivePercent), avgGPU)
 	} else {
 		gpuSparklineGroup.Title = fmt.Sprintf(i18n.T("Metrics_GPUSparkline"), int(gpuMetrics.ActivePercent), avgGPU)
 	}
 
-	// Update GPU history StepChart - use terminal width for reliable slicing
-	if gpuHistoryChart != nil {
-		termWidth, _ := GetCachedTerminalDimensions()
-
-		// Determine full vs half width based on layout
-		visibleWidth := termWidth - 4
-		if currentConfig.DefaultLayout == LayoutHistoryFull {
-			visibleWidth = (termWidth / 2) - 4
-		}
-
-		if visibleWidth <= 0 || visibleWidth > len(gpuValues) {
-			visibleWidth = len(gpuValues)
-		}
-		visibleData := gpuValues[len(gpuValues)-visibleWidth:]
-		gpuHistoryChart.Data = [][]float64{visibleData}
-		gpuHistoryChart.MaxVal = 100 // GPU usage is 0-100%
-		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", gpuMetrics.ActivePercent)}
-		gpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_GPUHistoryChart"), avgGPU)
-	}
+	renderGPUHistoryChart(gpuMetrics, avgGPU, effectiveNow)
 
 	// Update gauge colors with dynamic saturation if 1977 theme is active
 	if currentConfig.Theme == "1977" {
 		update1977GaugeColors()
 	}
+}
+
+func renderGPUHistoryChart(gpuMetrics GPUMetrics, avgGPU, effectiveNow float64) {
+	if gpuHistoryChart == nil {
+		return
+	}
+	termWidth, _ := GetCachedTerminalDimensions()
+	visibleWidth := termWidth - 4
+	if currentConfig.DefaultLayout == LayoutHistoryFull || currentConfig.DefaultLayout == LayoutHistorySoC {
+		visibleWidth = (termWidth / 2) - 4
+	}
+	if visibleWidth <= 0 || visibleWidth > len(gpuValues) {
+		visibleWidth = len(gpuValues)
+	}
+
+	visibleRaw := gpuValues[len(gpuValues)-visibleWidth:]
+	visibleEffective := gpuEffectiveHistory[len(gpuEffectiveHistory)-visibleWidth:]
+	visiblePeak := gpuPeakHistory[len(gpuPeakHistory)-visibleWidth:]
+
+	if currentConfig.DefaultLayout == LayoutHistorySoC {
+		currentPeak := 0.0
+		if len(visiblePeak) > 0 {
+			currentPeak = visiblePeak[len(visiblePeak)-1]
+		}
+
+		// Use the pre-recorded effective history (each point scaled with the freq at the time it was sampled).
+		// This is the correct behavior — frequency changes only affect new data points.
+		gpuHistoryChart.Data = [][]float64{visibleEffective}
+		gpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.GPU }, ui.ColorGreen)}
+		// Use the same locally-computed effective value that was just pushed
+		// into gpuEffectiveHistory (the plotted line): gpuMetrics.EffectiveLoad
+		// is unset on the seed path and can lag the history's freq source, so
+		// labeling from it can read 0%% while the line shows real load.
+		gpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_GPUHistoryEff"),
+			effectiveNow, gpuMetrics.FreqMHz, gpuMetrics.ActivePercent, currentPeak)
+		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("Eff %.0f%%", effectiveNow)}
+	} else {
+		gpuHistoryChart.Data = [][]float64{visibleRaw}
+		gpuHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.GPU }, ui.ColorGreen)}
+		gpuHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_GPUHistoryChart"), avgGPU)
+		gpuHistoryChart.DataLabels = []string{fmt.Sprintf("%.0f%%", gpuMetrics.ActivePercent)}
+	}
+	gpuHistoryChart.MaxVal = 100
 }
 
 func getCachedLinkInfo() ([]EthernetLinkInfo, *WiFiLinkInfo) {
@@ -1218,6 +1791,42 @@ func getBestLinkInfoString(ethInfo []EthernetLinkInfo, wifiInfo *WiFiLinkInfo) s
 }
 
 func updateNetDiskUI(netdiskMetrics NetDiskMetrics) {
+	// Update SSD read history (GB/s) for history_soc layout
+	// Decimal GB/s (bytes/1e9), matching the adjacent DRAM/ANE bandwidth
+	// charts so equal throughput plots at equal height under the shared
+	// "GB/s" axis label. ReadKBytesPerSec is KiB/s (bytes/1024), so multiply
+	// back to bytes before the decimal divide.
+	readGBs := netdiskMetrics.ReadKBytesPerSec * 1024.0 / 1e9
+	for i := 0; i < len(ssdReadHistory)-1; i++ {
+		ssdReadHistory[i] = ssdReadHistory[i+1]
+	}
+	ssdReadHistory[len(ssdReadHistory)-1] = readGBs
+
+	if ssdReadHistoryChart != nil {
+		termWidth, _ := GetCachedTerminalDimensions()
+		visibleWidth := termWidth - 4
+		if currentConfig.DefaultLayout == LayoutHistorySoC {
+			visibleWidth = (termWidth / 3) - 4
+		}
+		if visibleWidth <= 0 || visibleWidth > len(ssdReadHistory) {
+			visibleWidth = len(ssdReadHistory)
+		}
+		visibleData := ssdReadHistory[len(ssdReadHistory)-visibleWidth:]
+
+		// True observed peak for the title; a separate floored value for the
+		// Y-axis so an idle chart still has visible height without the title
+		// claiming a 0.50 GB/s peak that never occurred.
+		peak := seriesMax(visibleData)
+		scaleMax := peak
+		if scaleMax < 0.5 {
+			scaleMax = 0.5
+		}
+
+		ssdReadHistoryChart.Data = [][]float64{visibleData}
+		ssdReadHistoryChart.MaxVal = scaleMax * 1.3
+		ssdReadHistoryChart.Title = fmt.Sprintf(i18n.T("Metrics_SSDReadDetail"), readGBs, peak)
+	}
+
 	var sb strings.Builder
 
 	ethInfo, wifiInfo := getCachedLinkInfo()

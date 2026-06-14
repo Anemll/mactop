@@ -131,9 +131,14 @@ func runHeadless(count int) {
 	}
 	defer cleanupSocMetrics()
 
-	// Start display FPS counter (gracefully no-ops if no display available)
-	StartDisplayFPSCounter()
-	defer StopDisplayFPSCounter()
+	// Start display FPS counter only when Screen Recording permission is
+	// already granted: creating a CGDisplayStream without it triggers the
+	// system permission prompt, which must never happen in headless runs
+	// (cron/SSH/scripts). Without permission display_fps is simply omitted.
+	if HasScreenRecordingAccess() {
+		StartDisplayFPSCounter()
+		defer StopDisplayFPSCounter()
+	}
 
 	startHeadlessPrometheus()
 

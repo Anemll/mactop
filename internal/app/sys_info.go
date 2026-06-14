@@ -253,6 +253,62 @@ func getGPUCores() string {
 	return "?"
 }
 
+// getTotalRAMGB returns the total installed system memory in gigabytes.
+func getTotalRAMGB() int {
+	memBytes, err := sysctlIntByName("hw.memsize")
+	if err != nil || memBytes <= 0 {
+		return 0
+	}
+	return memBytes / (1024 * 1024 * 1024)
+}
+
+// GetGPUMaxFreqMHz returns a reasonable nominal maximum GPU frequency
+// for the current SoC. This is used to compute frequency-adjusted
+// "effective" GPU load in the history_soc layout.
+func GetGPUMaxFreqMHz() int {
+	// Prefer the real per-chip maximum read from hardware (pmgr voltage
+	// states) — correct on every chip including ones newer than the static
+	// table below (which has no M5 entries and a generic default).
+	if hw := GetMaxGPUFrequency(); hw > 0 {
+		return hw
+	}
+
+	model := cachedSOCInfoResult.Name
+	if model == "" {
+		model = getCPUInfo()["machdep.cpu.brand_string"]
+	}
+
+	// Approximate nominal max GPU clocks (MHz) based on public data.
+	// These are conservative estimates for the highest bin of each family.
+	switch {
+	case strings.Contains(model, "M4 Max"):
+		return 1800
+	case strings.Contains(model, "M4 Pro"):
+		return 1700
+	case strings.Contains(model, "M4"):
+		return 1600
+	case strings.Contains(model, "M3 Max"):
+		return 1600
+	case strings.Contains(model, "M3 Pro"):
+		return 1500
+	case strings.Contains(model, "M3"):
+		return 1400
+	case strings.Contains(model, "M2 Ultra"), strings.Contains(model, "M2 Max"):
+		return 1400
+	case strings.Contains(model, "M2 Pro"):
+		return 1350
+	case strings.Contains(model, "M2"):
+		return 1300
+	case strings.Contains(model, "M1 Ultra"), strings.Contains(model, "M1 Max"):
+		return 1300
+	case strings.Contains(model, "M1 Pro"):
+		return 1296
+	default:
+		// Safe default for unknown / future chips
+		return 1400
+	}
+}
+
 type thermalStateLevel int
 
 // Thermal pressure levels mirror macOS's OSThermalPressureLevel scale, exposed

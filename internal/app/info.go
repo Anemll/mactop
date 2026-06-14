@@ -90,7 +90,7 @@ func buildInfoLines(themeColor string) []string {
 		"",
 		formatLine(i18n.T("Info_CPUUsage"), fmt.Sprintf("%.2f%%", float64(cpuGauge.Percent))),
 		formatLine(i18n.T("Info_GPUUsage"), fmt.Sprintf("%d%%", int(lastGPUMetrics.ActivePercent))),
-		formatLine(i18n.T("Info_ANEUsage"), fmt.Sprintf("%d%%", int(lastCPUMetrics.ANEW/8.0*100))),
+		formatLine(i18n.T("Info_ANEUsage"), fmt.Sprintf("%d%%", int(aneUtilizationPercent(lastCPUMetrics)))),
 		formatLine(i18n.T("Info_Power"), fmt.Sprintf(i18n.T("Info_PowerValue"), lastCPUMetrics.PackageW, avgWatts)),
 		formatLine(i18n.T("Info_Thermals"), thermalStr),
 		formatLine(i18n.T("Info_Network"), fmt.Sprintf(i18n.T("Info_NetworkValue"), formatBytes(lastNetDiskMetrics.OutBytesPerSec, networkUnit), formatBytes(lastNetDiskMetrics.InBytesPerSec, networkUnit))),

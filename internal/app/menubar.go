@@ -292,11 +292,9 @@ func updateMenuBarFromPayload(p MenuBarMetricsPayload) {
 	cm.cpu_percent = C.double(p.CPUPercent)
 	cm.gpu_percent = C.double(p.GPUMetrics.ActivePercent)
 
-	anePct := p.CPUMetrics.ANEW / 8.0 * 100
-	if anePct > 100 {
-		anePct = 100
-	}
-	cm.ane_percent = C.double(anePct) // Power-based estimation (same as TUI)
+	// Power-based when available, AMC bandwidth-based fallback otherwise
+	// (same logic as the TUI gauge).
+	cm.ane_percent = C.double(aneUtilizationPercent(p.CPUMetrics))
 
 	cm.mem_used_bytes = C.ulonglong(p.MemMetrics.Used)
 	cm.mem_total_bytes = C.ulonglong(p.MemMetrics.Total)

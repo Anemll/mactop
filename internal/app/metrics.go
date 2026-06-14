@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -103,6 +104,9 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		CPUW:            m.CPUPower,
 		GPUW:            m.GPUPower,
 		ANEW:            m.ANEPower,
+		ANEActive:       m.ANEActive,
+		ANEReadBW:       m.ANEReadBW,
+		ANEWriteBW:      m.ANEWriteBW,
 		DRAMW:           m.DRAMPower,
 		GPUSRAMW:        m.GPUSRAMPower,
 		SystemW:         m.SystemPower,
@@ -119,11 +123,98 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		DRAMReadBW:      m.DRAMReadBW,
 		DRAMWriteBW:     m.DRAMWriteBW,
 		DRAMBWCombined:  m.DRAMBWCombined,
+		ANEBW:           m.ANEBWCombined,
 		Fans:            m.Fans,
 		TempSensors:     m.TempSensors,
 		CoreUsages:      coreUsages,
 		AvgUsage:        avgUsage,
 	}
+}
+
+// aneMaxPowerW is the assumed full-tilt ANE power draw used for the
+// power-based utilization estimate (historical mactop behavior).
+const aneMaxPowerW = 8.0
+
+// aneBWRefFloorGBs is the minimum bandwidth treated as "100% ANE activity"
+// for the bandwidth-based estimate. A saturating conv workload measured
+// ~3.5-3.8 GB/s of ANE fabric traffic on M1 Ultra; the reference grows
+// adaptively if higher bandwidth is ever observed (maxANEBWSeen).
+const aneBWRefFloorGBs = 4.0
+
+// aneUtilizationPercent estimates Neural Engine utilization. It prefers the
+// power-based estimate from the Energy Model ANE channel; when that channel
+// is dead (macOS 27 beta zeroed all per-block energy counters) but the AMC
+// "ANE RD/WR" byte counters show traffic, it falls back to a bandwidth-based
+// activity estimate so ANE usage doesn't silently read 0 on newer OSes.
+func aneUtilizationPercent(m CPUMetrics) float64 {
+	// 1. PMP state-residency utilization (macOS 27+/M5): true time-above-
+	//    idle-floor measurement parsed from the ANE-AF-BW / ANE-DCS-BW
+	//    channels — the most accurate signal where it exists. Latch the
+	//    bandwidth-form label: residency flowing while watts read 0 proves
+	//    the energy counter is dead.
+	if m.ANEActive > 0 {
+		// This machine has a live PMP residency signal (M5-class). Latch it so
+		// the history chart plots stored residency percentages as-is rather
+		// than re-deriving them from bandwidth (which is a different quantity
+		// and would diverge from this gauge).
+		aneResidencyLatched.Store(true)
+		if m.ANEW <= 0 {
+			aneBWModeLatched.Store(true)
+		}
+		pct := m.ANEActive
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	// 2. Energy Model power estimate (macOS 26 and any OS with working
+	//    per-block energy counters).
+	if m.ANEW > 0 {
+		pct := m.ANEW / aneMaxPowerW * 100
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	// 3. Bandwidth activity estimate (M1-M4 on macOS 27: AMC byte counters).
+	if m.ANEBW > 0 {
+		// ANE traffic with zero watts proves the energy counter is dead (an
+		// idle ANE produces neither). Latch bandwidth mode for the session so
+		// the UI label stays in GB/s form even when traffic later drops to 0,
+		// instead of reverting to a misleading "@ 0.00 W".
+		aneBWModeLatched.Store(true)
+		// Monotonic session max via CAS (callers run on several goroutines).
+		// 3% ratchet hysteresis: a single burst-aligned sample window
+		// marginally above the sustained plateau would otherwise become the
+		// permanent 100% reference, pinning genuine saturation at a
+		// misleading 96-98%. Bursts within 3% read as 100% via the clamp
+		// below; real step-ups beyond 3% still re-scale the reference.
+		for {
+			cur := math.Float64frombits(maxANEBWSeenBits.Load())
+			if m.ANEBW <= cur*1.03 {
+				break
+			}
+			if maxANEBWSeenBits.CompareAndSwap(math.Float64bits(cur), math.Float64bits(m.ANEBW)) {
+				break
+			}
+		}
+		ref := max(math.Float64frombits(maxANEBWSeenBits.Load()), aneBWRefFloorGBs)
+		pct := m.ANEBW / ref * 100
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	return 0
+}
+
+// aneBWLabelMode reports whether ANE displays should use the bandwidth-form
+// label (GB/s) instead of watts. True while the power channel yields nothing
+// and either traffic is currently flowing or bandwidth mode was latched
+// earlier this session. On OSes with a working energy counter (macOS 26) the
+// latch never trips, so labels behave exactly as before.
+func aneBWLabelMode(m CPUMetrics) bool {
+	return m.ANEW <= 0 && (m.ANEActive > 0 || m.ANEBW > 0 || aneBWModeLatched.Load())
 }
 
 func gpuMetricsFromSoc(m SocMetrics) GPUMetrics {
@@ -467,6 +558,23 @@ func collectMetrics(done chan struct{}, cpumetricsChan chan CPUMetrics, gpumetri
 		avgUsage := averageCPUUsage(coreUsages)
 		cpuMetrics := cpuMetricsFromSoc(m, coreUsages, avgUsage, throttled)
 		gpuMetrics := gpuMetricsFromSoc(m)
+
+		// Compute frequency-adjusted effective GPU load (used by history_soc)
+		if gpuMetrics.FreqMHz > 0 {
+			maxFreq := GetGPUMaxFreqMHz()
+			if maxFreq > 0 {
+				eff := gpuMetrics.ActivePercent * (float64(gpuMetrics.FreqMHz) / float64(maxFreq))
+				if eff > 100 {
+					eff = 100
+				}
+				gpuMetrics.EffectiveLoad = eff
+			} else {
+				gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+			}
+		} else {
+			gpuMetrics.EffectiveLoad = gpuMetrics.ActivePercent
+		}
+
 		tbNetStats := GetThunderboltNetStats()
 		publishPrometheusMetrics(prometheusMetricsSnapshot{
 			SystemInfo:   sysInfo,

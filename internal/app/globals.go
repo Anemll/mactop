@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ui "github.com/metaspartan/gotui/v5"
@@ -25,7 +26,7 @@ func init() {
 }
 
 var (
-	version                                                     = "v2.1.4"
+	version                                                     = "v2.1.5"
 	cpuGauge, gpuGauge, memoryGauge, aneGauge                   *w.Gauge
 	mainBlock                                                   *ui.Block
 	modelText, PowerChart, NetworkInfo, helpText, infoParagraph *w.Paragraph
@@ -51,6 +52,9 @@ var (
 	// StepChart widgets for History layout
 	gpuHistoryChart, powerHistoryChart, memoryHistoryChart, cpuHistoryChart *w.StepChart
 	memBWHistoryChart                                                       *w.StepChart
+	aneHistoryChart, bandwidthHistoryChart                                  *w.StepChart
+	socPowerHistoryChart                                                    *w.StepChart // Multi-line power for history_soc (CPU/GPU/ANE/DRAM)
+	ssdReadHistoryChart                                                     *w.StepChart // Combined SSD read bandwidth history (GB/s)
 	memoryUsedHistory                                                       = make([]float64, 100)
 	swapUsedHistory                                                         = make([]float64, 100)
 	cpuUsageHistory                                                         = make([]float64, 100)
@@ -58,6 +62,35 @@ var (
 	memBWReadHistory                                                        = make([]float64, 100)
 	memBWWriteHistory                                                       = make([]float64, 100)
 	maxMemBWSeen                                                            float64
+	// ANE estimate state shared between the sampler goroutine (latch writes in
+	// sampleSocMetrics) and the UI/menubar/overlay goroutines (reads + adaptive
+	// max updates in aneUtilizationPercent) — atomics to avoid a data race.
+	maxANEBWSeenBits    atomic.Uint64 // float64 bits; monotonic session max
+	aneBWModeLatched    atomic.Bool
+	aneResidencyLatched atomic.Bool // M5-class: ANEActive (PMP residency) seen this session
+	aneUsageHistory     = make([]float64, 100)
+	dramReadHistory     = make([]float64, 100)
+	dramWriteHistory    = make([]float64, 100)
+	aneReadBwHistory    = make([]float64, 100)
+	aneWriteBwHistory   = make([]float64, 100)
+
+	// previousLayout remembers the layout active before a direct switchToLayout
+	// jump (e.g. the 'a' ANE/BW history shortcut), so the key toggles back.
+	previousLayout string
+
+	// Per-component power histories for the SoC history layout (history_soc)
+	cpuPowerHistory, gpuPowerHistory, anePowerHistory, dramPowerHistory = make([]float64, 100), make([]float64, 100), make([]float64, 100), make([]float64, 100)
+
+	// Decaying-peak histories for the four SoC usage charts in history_soc layout
+	cpuPeakHistory, gpuPeakHistory, anePeakHistory, bwPeakHistory []float64
+
+	// Frequency-adjusted effective GPU load history (for history_soc layout only).
+	// Each sample is recorded with the GPU frequency active at the time it arrived.
+	// This prevents the entire history graph from jumping when frequency changes.
+	gpuEffectiveHistory []float64
+
+	// Additional histories for the split bottom section in history_soc
+	ssdReadHistory []float64 // SSD read bandwidth history in GB/s
 
 	cpuCoreWidget                 *CPUCoreWidget
 	powerValues                   = make([]float64, 35)

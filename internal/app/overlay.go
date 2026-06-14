@@ -294,10 +294,7 @@ func updateOverlayFromPayload(p MenuBarMetricsPayload) {
 	cm.cpu_percent = C.double(p.CPUPercent)
 	cm.gpu_percent = C.double(p.GPUMetrics.ActivePercent)
 
-	anePct := p.CPUMetrics.ANEW / 8.0 * 100
-	if anePct > 100 {
-		anePct = 100
-	}
+	anePct := aneUtilizationPercent(p.CPUMetrics)
 	cm.ane_percent = C.double(anePct) // Power-based estimation
 
 	cm.mem_used_bytes = C.ulonglong(p.MemMetrics.Used)

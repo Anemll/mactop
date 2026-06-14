@@ -26,11 +26,12 @@ const (
 	LayoutPico            = "pico"         // Maximum density with 2x2 gauges + sparklines
 	LayoutHistory         = "history"      // StepChart history for GPU, Power, and Memory
 	LayoutHistoryFull     = "history_full" // StepChart history including CPU
+	LayoutHistorySoC      = "history_soc"  // StepChart history: CPU, GPU, ANE, DRAM Bandwidth
 	LayoutFan             = "fan"          // Fan control and temperature sensors
 	LayoutGPUMemory       = "gpu_memory"   // GPU + Memory focused with memory bandwidth chart
 )
 
-var layoutOrder = []string{LayoutDefault, LayoutAlternative, LayoutAlternativeFull, LayoutVertical, LayoutCompact, LayoutDashboard, LayoutGaugesOnly, LayoutGPUFocus, LayoutCPUFocus, LayoutGPUMemory, LayoutNetworkIO, LayoutSmall, LayoutTiny, LayoutMicro, LayoutNano, LayoutPico, LayoutHistory, LayoutHistoryFull, LayoutFan}
+var layoutOrder = []string{LayoutDefault, LayoutAlternative, LayoutAlternativeFull, LayoutVertical, LayoutCompact, LayoutDashboard, LayoutGaugesOnly, LayoutGPUFocus, LayoutCPUFocus, LayoutGPUMemory, LayoutNetworkIO, LayoutSmall, LayoutTiny, LayoutMicro, LayoutNano, LayoutPico, LayoutHistory, LayoutHistoryFull, LayoutHistorySoC, LayoutFan}
 
 func setupGrid() {
 	totalLayouts = len(layoutOrder)
@@ -57,6 +58,34 @@ func cycleLayout(step int) {
 	currentLayoutNum = nextIndex
 	totalLayouts = n
 	applyLayout(currentConfig.DefaultLayout)
+	updateHelpText()
+}
+
+// switchToLayout jumps directly to the named layout. Pressing the shortcut
+// again while already on it returns to the previously active layout.
+func switchToLayout(layoutName string) {
+	target := layoutName
+	if currentConfig.DefaultLayout == layoutName {
+		// Already on the target layout: toggle back to wherever we came from.
+		// If that is unknown or would be a self-jump (e.g. the user reached
+		// this layout by cycling with l/L, so no jump recorded it), fall back
+		// to the default layout so the shortcut always leaves the layout
+		// instead of deadlocking on itself.
+		target = previousLayout
+		if target == "" || target == layoutName {
+			target = LayoutDefault
+		}
+	}
+	previousLayout = currentConfig.DefaultLayout
+	for i, layout := range layoutOrder {
+		if layout == target {
+			currentLayoutNum = i
+			break
+		}
+	}
+	currentConfig.DefaultLayout = target
+	totalLayouts = len(layoutOrder)
+	applyLayout(target)
 	updateHelpText()
 }
 
@@ -258,6 +287,8 @@ func setLayoutGrid(layoutName string) {
 		setInfoFanLayoutGrid(layoutName)
 	case LayoutHistory, LayoutHistoryFull, LayoutGPUMemory:
 		setHistoryLikeLayoutGrid(layoutName)
+	case LayoutHistorySoC:
+		setHistorySoCLayoutGrid()
 	default: // LayoutDefault
 		grid.Set(
 			ui.NewRow(1.0/4,
@@ -448,4 +479,33 @@ func setHistoryFullLayoutGrid() {
 			ui.NewCol(1.0, processList),
 		),
 	)
+}
+
+func setHistorySoCLayoutGrid() {
+	// SoC History layout for ANE/ML workloads (all charts, no process list):
+	// Row 1: CPU + GPU
+	// Row 2: ANE + SoC Power (rightmost)
+	// Row 3 (bottom): Memory BW (left) | Memory Used | SSD Read
+	// Rows scaled ×1.25 from the former 0.24/0.24/0.32 to reclaim the height
+	// the process list used to occupy.
+	grid.Set(
+		ui.NewRow(0.30,
+			ui.NewCol(1.0/2, cpuHistoryChart),
+			ui.NewCol(1.0/2, gpuHistoryChart),
+		),
+		ui.NewRow(0.30,
+			ui.NewCol(1.0/2, aneHistoryChart),
+			ui.NewCol(1.0/2, socPowerHistoryChart),
+		),
+		ui.NewRow(0.40,
+			ui.NewCol(1.0/3, bandwidthHistoryChart), // Memory BW leftmost
+			ui.NewCol(1.0/3, memoryHistoryChart),
+			ui.NewCol(1.0/3, ssdReadHistoryChart),
+		),
+	)
+
+	// Force orange for memory graph specifically in history_soc
+	if currentConfig.DefaultLayout == LayoutHistorySoC && memoryHistoryChart != nil {
+		memoryHistoryChart.LineColors = []ui.Color{ui.ColorOrange, ui.ColorMagenta}
+	}
 }

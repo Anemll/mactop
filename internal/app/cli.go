@@ -145,6 +145,15 @@ func runTestApp() {
 			m.CPUPower, m.GPUPower, m.GPUFreqMHz, m.GPUActive)
 		fmt.Printf(i18n.T("CLI_TestANE")+"\n",
 			m.ANEPower, m.DRAMPower, m.GPUSRAMPower, m.TotalPower, thermalStr)
+		// Also show direct ANE utilization % (residency above the idle floor on
+		// the PMP ANE-AF-BW / ANE-DCS-BW state channels) when available
+		if m.ANEActive > 0 {
+			fmt.Printf("  ANE use: %.1f%%\n", m.ANEActive)
+		}
+		if m.ANEBWCombined > 0.01 {
+			fmt.Printf("  ANE BW: %.1f GB/s RD + %.1f GB/s WR (PMP rate histograms)\n",
+				m.ANEReadBW, m.ANEWriteBW)
+		}
 		fmt.Println()
 	}
 	cleanupSocMetrics()

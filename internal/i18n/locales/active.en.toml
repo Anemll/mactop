@@ -43,6 +43,13 @@ TUI_PowerHistory = "Power History"
 TUI_MemorySwapHistory = "Memory/Swap History"
 TUI_MemoryBandwidthHistory = "Memory Bandwidth History"
 TUI_CPUUsageHistory = "CPU Usage History"
+TUI_SoCPowerHistory = "SoC Power History (CPU / GPU / ANE / DRAM)"
+TUI_SSDReadHistory = "SSD Read (GB/s)"
+Metrics_SoCPowerDetail = "SoC Power: Total %.1fW | ANE %s | CPU %.1fW | GPU %.1fW | DRAM %.1fW"
+Metrics_SoCPowerDetailNoANE = "SoC Power: Total %.1fW | CPU %.1fW | GPU %.1fW | DRAM %.1fW"
+Metrics_SSDReadDetail = "SSD Read %.2f GB/s (Peak %.2f)"
+TUI_ANEUsageHistory = "ANE Usage History"
+TUI_DRAMBandwidthHistory = "DRAM Bandwidth History (Read/Write)"
 TUI_ConfirmKill = " CONFIRM "
 TUI_ConfirmKillBody = "CONFIRM KILL"
 TUI_ConfirmYes = "Yes"
@@ -98,9 +105,11 @@ Metrics_CPUGaugeCompact = "CPU %.0f%% %s"
 Metrics_CPUGauge = "%d Cores %s %.2f%%%s (%s)"
 Metrics_ANEGaugeCompact = "ANE %.1fW"
 Metrics_ANEGauge = "ANE Usage: %.2f%% @ %.2f W"
+Metrics_ANEGaugeBW = "ANE Usage: ~%.0f%% @ %.2f GB/s"
+Metrics_ANEGaugeBWCompact = "ANE %.1fGB/s"
 Metrics_PowerChartTitleCompact = "Power"
-Metrics_PowerChartTextCompact = "C:%.1fW G:%.1fW\nA:%.1fW D:%.1fW\nTot:%.1fW %s"
-Metrics_PowerChartText = "CPU: %.2f W | GPU: %.2f W\nANE: %.2f W | DRAM: %.2f W\nSystem: %.2f W\nTotal: %.2f W\nThermals: %s\nUptime: %s"
+Metrics_PowerChartTextCompact = "C:%.1fW G:%.1fW\nA:%s D:%.1fW\nTot:%.1fW %s"
+Metrics_PowerChartText = "CPU: %.2f W | GPU: %.2f W\nANE: %s | DRAM: %.2f W\nSystem: %.2f W\nTotal: %.2f W\nThermals: %s\nUptime: %s"
 Metrics_NetworkDiskTitle = "Network & Disk"
 Metrics_MemGaugeCompact = "Mem %.0f/%.0fG BW %.1f GB/s"
 Metrics_MemGauge = "Mem: %.2f GB / %.2f GB (Swap: %.2f/%.2f GB) BW: %.1f GB/s"
@@ -155,7 +164,8 @@ Update Interval: %dms
 - c / Shift + C: Cycle UI color themes forward / backward
 - b / Shift + B: Cycle UI background colors forward / backward
 - p: Toggle party mode (color cycling)
-- l / Shift + L: Cycle through the 19 available layouts forward / backward
+- l / Shift + L: Cycle through the 20 available layouts forward / backward
+- a: Jump to the ANE/BW history layout (press again to go back)
 - i: Toggle information layout
 - Shift + F: Toggle fan control & thermals layout
 - F9: Kill selected process (y/n confirm)
@@ -309,6 +319,14 @@ Metrics_PowerHistoryDetail = "Power History (Avg: %.1fW, Max: %.1fW)"
 Metrics_CPUHistoryDetail = "CPU Usage History (%.1f%%)"
 Metrics_MemoryHistoryDetail = "Mem: %.1f/%.1fGB, Swap: %.1fGB"
 Metrics_MemBWHistoryDetail = "DRAM Bandwidth: %.1f GB/s"
+Metrics_ANEHistoryDetail = "ANE History (%.1f%%, %.2fW)"
+Metrics_ANEHistoryDetailBW = "ANE History (~%.1f%%, %.2f GB/s)"
+Metrics_BandwidthHistoryDetail = "DRAM Bandwidth  R: %.1f  W: %.1f  (Total %.1f GB/s)"
+Metrics_CPUHistoryPeak = "CPU %.0f%% (Peak %.0f%%)"
+Metrics_ANEHistoryPeak = "ANE %.1f%% (Peak %.1f%%, %.2fW)"
+Metrics_ANEHistoryPeakBW = "ANE %.1f%% (Peak %.1f%%, %.2f GB/s)"
+Metrics_BandwidthHistoryPeak = "DRAM R:%.1f W:%.1f  ANE R:%.1f W:%.1f GB/s (Peak %.1f)"
+Metrics_GPUHistoryEff = "GPU Eff %.0f%% @ %dMHz (Raw %.0f%%, Peak Raw %.0f%%)"
 
 TUI_KillPIDTitle = " CONFIRM KILL PID %d "
 

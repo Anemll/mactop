@@ -70,6 +70,7 @@ typedef struct {
     double systemPower;
     int gpuFreqMHz;
     double gpuActive;
+    double aneActive;
     double eClusterActive;
     double pClusterActive;
     double sClusterActive;
@@ -81,6 +82,8 @@ typedef struct {
     float gpuTemp;
     int64_t dramReadBytes;
     int64_t dramWriteBytes;
+    int64_t aneReadBytes;
+    int64_t aneWriteBytes;
     int64_t actualDurationNs;
     int fanCount;
     fan_info_t fans[8];
@@ -156,6 +159,10 @@ type SocMetrics struct {
 	DRAMReadBW      float64      `json:"dram_read_bw_gbs"`
 	DRAMWriteBW     float64      `json:"dram_write_bw_gbs"`
 	DRAMBWCombined  float64      `json:"dram_bw_combined_gbs"`
+	ANEReadBW       float64      `json:"ane_read_bw_gbs"`
+	ANEWriteBW      float64      `json:"ane_write_bw_gbs"`
+	ANEBWCombined   float64      `json:"ane_bw_combined_gbs"`
+	ANEActive       float64      `json:"ane_active"`
 	Fans            []FanInfo    `json:"-"`
 	TempSensors     []TempSensor `json:"-"`
 }
@@ -194,6 +201,34 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		dramReadBW = float64(pm.dramReadBytes) / intervalSec / 1e9
 		dramWriteBW = float64(pm.dramWriteBytes) / intervalSec / 1e9
 		dramBWCombined = float64(pm.dramReadBytes+pm.dramWriteBytes) / intervalSec / 1e9
+	}
+	// ANE bandwidth uses the same actual-interval divisor as DRAM BW so the
+	// GB/s is exact regardless of scheduler jitter (the C layer already chose
+	// the best byte source: AMC counters on M1-M4, PMP histograms on M5+).
+	var aneReadBW, aneWriteBW, aneBWCombined float64
+	if intervalSec > 0 {
+		aneReadBW = float64(pm.aneReadBytes) / intervalSec / 1e9
+		aneWriteBW = float64(pm.aneWriteBytes) / intervalSec / 1e9
+		aneBWCombined = float64(pm.aneReadBytes+pm.aneWriteBytes) / intervalSec / 1e9
+	}
+
+	// Detect dead per-block energy counters deterministically, from the very
+	// first sample (including the 50 ms seed): on any working OS, CPU and DRAM
+	// energy can never both be exactly zero across a sampling window — the
+	// sampler itself executes on a CPU core during the window (≥25 mJ even on
+	// an E-core at 50 ms) and DRAM refresh alone draws ~0.3 W (≥15 mJ), both
+	// far above the 1 mJ counter resolution. macOS 27 beta zeroes every
+	// per-block Energy Model counter while the aggregate "GPU Energy" channel
+	// keeps flowing — so gpuPower > 0 alongside zero CPU+DRAM is positive
+	// proof of the selective breakage AND that this sample's delta pipeline
+	// produced data at all. Requiring it means a transient all-zero delta
+	// (e.g. a startup hiccup on a healthy OS, where GPU would also read 0)
+	// can never mislatch the session into bandwidth-form labels. No ANE
+	// traffic required first, no OS-version sniffing; a sample with working
+	// watts (ANEW > 0) still takes precedence in the display, so a future
+	// fixed OS reverts automatically.
+	if intervalSec >= 0.04 && pm.gpuPower > 0 && pm.cpuPower == 0 && pm.dramPower == 0 {
+		aneBWModeLatched.Store(true)
 	}
 
 	// Convert fan data from C arrays to Go slices
@@ -244,6 +279,10 @@ func sampleSocMetrics(durationMs int) SocMetrics {
 		DRAMReadBW:      dramReadBW,
 		DRAMWriteBW:     dramWriteBW,
 		DRAMBWCombined:  dramBWCombined,
+		ANEReadBW:       aneReadBW,
+		ANEWriteBW:      aneWriteBW,
+		ANEBWCombined:   aneBWCombined,
+		ANEActive:       float64(pm.aneActive),
 		Fans:            fans,
 		TempSensors:     tempSensors,
 	}
