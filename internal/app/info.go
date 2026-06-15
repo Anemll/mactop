@@ -112,6 +112,27 @@ func buildInfoLines(themeColor string) []string {
 		formatLine(i18n.T("Info_DRAMBW"), fmt.Sprintf(i18n.T("Info_DRAMBWValue"), lastCPUMetrics.DRAMReadBW, lastCPUMetrics.DRAMWriteBW, lastCPUMetrics.DRAMBWCombined)),
 	}
 
+	if len(lastCPUMetrics.ANEClusterActive) > 1 {
+		nClusters := lastCPUMetrics.ANEClusterCount
+		if nClusters < 2 {
+			nClusters = len(lastCPUMetrics.ANEClusterActive)
+		}
+		clusterLine := formatLine(
+			fmt.Sprintf("ANE clusters (%d)", nClusters),
+			formatDualANEClusterStatus(
+				lastCPUMetrics.ANEClusterActive[0],
+				lastCPUMetrics.ANEClusterActive[1],
+				lastCPUMetrics.ANEPowered,
+			),
+		)
+		for i, line := range infoLines {
+			if strings.Contains(line, i18n.T("Info_ANEUsage")) {
+				infoLines = append(infoLines[:i+1], append([]string{clusterLine}, infoLines[i+1:]...)...)
+				break
+			}
+		}
+	}
+
 	if bat := GetBatteryInfo(); bat.Displayable() {
 		infoLines = append(infoLines, formatLine(i18n.T("Info_Battery"), fmt.Sprintf(i18n.T("Info_BatteryValue"), *bat.Percent, batteryStateLabel(bat))))
 	}

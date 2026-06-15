@@ -21,6 +21,9 @@
 #include <pthread.h>
 #include <notify.h>
 
+// Max H11ANEIn driver-interface nodes (Ultra-class chips expose 2).
+#define MAX_ANE_SERVICES 4
+
 // Wi-Fi link info structure
 typedef struct {
   char interface_name[32];
@@ -1431,6 +1434,10 @@ typedef struct {
   int64_t actualDurationNs;
   int64_t aneReadBytes;
   int64_t aneWriteBytes;
+  // Per-cluster ANE power-domain duty cycle (0-100%) from each H11ANEIn node.
+  // Only populated by the IORegistry fallback; length is aneClusterCount.
+  int aneClusterCount;
+  double aneClusterActive[MAX_ANE_SERVICES];
   // 1 => aneActive is the binary ANE power-domain duty cycle (M5 Max / macOS 27
   // non-root fallback: ANE powered vs idle), NOT a true utilization %.
   int aneIsPowerState;
@@ -2532,12 +2539,30 @@ static void readNVMeSMARTTemps(void) {
 // higher-resolution floor-residency signal). No finer-grained non-root counter
 // exists: the ANE HAL / load-balancer IORegistry nodes carry only static device
 // info, and the PMP performance-floor channels are empty for non-root here.
-static io_service_t copyAneService(void) {
-  // The ANE interface driver has kept the IOClass name "H11ANEIn" across Apple
-  // silicon generations (M1..M5), so match on it directly. IOServiceMatching
-  // returns a dict that IOServiceGetMatchingService consumes (no leak).
-  return IOServiceGetMatchingService(kIOMainPortDefault,
-                                     IOServiceMatching("H11ANEIn"));
+//
+// Ultra-class chips (M1/M2/M3 Ultra, etc.) fuse two dies and expose two
+// H11ANEIn driver-interface nodes (H11ANE + H11ANE1, NumANEs=2). Single-die
+// parts (M5 Max, M4 Pro, …) expose exactly one. Use the plural service lookup
+// and OR per-slice power state so either cluster being powered counts as active.
+static int collectAneServices(io_service_t *out, int maxOut) {
+  if (out == NULL || maxOut <= 0) return 0;
+
+  io_iterator_t iterator = 0;
+  io_object_t entry;
+  int count = 0;
+
+  CFMutableDictionaryRef matching = IOServiceMatching("H11ANEIn");
+  if (matching == NULL) return 0;
+  if (IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) !=
+      kIOReturnSuccess) {
+    return 0;
+  }
+
+  while ((entry = IOIteratorNext(iterator)) != 0 && count < maxOut) {
+    out[count++] = entry;
+  }
+  IOObjectRelease(iterator);
+  return count;
 }
 
 // Returns the ANE CurrentPowerState (>=0), or -1 if unavailable.
@@ -2557,6 +2582,44 @@ static int readAnePowerState(io_service_t svc) {
   }
   CFRelease(pm);
   return state;
+}
+
+// Sort key so H11ANE (die 0) precedes H11ANE1 (die 1) in per-cluster arrays.
+static int aneServiceSortKey(io_service_t svc) {
+  io_name_t name;
+  if (IORegistryEntryGetName(svc, name) != KERN_SUCCESS) return 99;
+  if (strcmp(name, "H11ANE") == 0) return 0;
+  if (strcmp(name, "H11ANE1") == 0) return 1;
+  return 50;
+}
+
+static void sortAneServicesByDie(io_service_t *svcs, int count) {
+  for (int i = 0; i < count - 1; i++) {
+    for (int j = i + 1; j < count; j++) {
+      if (aneServiceSortKey(svcs[j]) < aneServiceSortKey(svcs[i])) {
+        io_service_t tmp = svcs[i];
+        svcs[i] = svcs[j];
+        svcs[j] = tmp;
+      }
+    }
+  }
+}
+
+// Per-slice aggregate across all H11ANEIn nodes: 1 if any cluster is powered,
+// 0 if all readable nodes are idle, -1 if none are readable.
+static int readAnyAnePowered(io_service_t *svcs, int count) {
+  if (svcs == NULL || count <= 0) return -1;
+
+  int anyReadable = 0;
+  int anyPowered = 0;
+  for (int i = 0; i < count; i++) {
+    int st = readAnePowerState(svcs[i]);
+    if (st < 0) continue;
+    anyReadable = 1;
+    if (st >= 1) anyPowered = 1;
+  }
+  if (!anyReadable) return -1;
+  return anyPowered ? 1 : 0;
 }
 
 PowerMetrics samplePowerMetrics(int durationMs) {
@@ -2589,22 +2652,45 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   // absent (M5 Max / macOS 27, non-root). anePowerStatePct < 0 => unavailable.
   double anePowerStatePct = -1.0;
   {
-    io_service_t aneSvc = copyAneService();
+    io_service_t aneSvcs[MAX_ANE_SERVICES];
+    int aneSvcCount = collectAneServices(aneSvcs, MAX_ANE_SERVICES);
+    sortAneServicesByDie(aneSvcs, aneSvcCount);
     int slices = durationMs / 50; // ~50ms cadence (20 samples over a 1s window)
     if (slices < 1) slices = 1;
     useconds_t sliceUs = (useconds_t)((long)durationMs * 1000 / slices);
     int samples = 0, powered = 0;
+    int perSamples[MAX_ANE_SERVICES] = {0};
+    int perPowered[MAX_ANE_SERVICES] = {0};
     for (int si = 0; si < slices; si++) {
-      if (aneSvc != MACH_PORT_NULL) {
-        int st = readAnePowerState(aneSvc);
+      if (aneSvcCount > 0) {
+        int st = readAnyAnePowered(aneSvcs, aneSvcCount);
         if (st >= 0) {
           samples++;
           if (st >= 1) powered++;
         }
+        for (int ai = 0; ai < aneSvcCount; ai++) {
+          int nodeSt = readAnePowerState(aneSvcs[ai]);
+          if (nodeSt >= 0) {
+            perSamples[ai]++;
+            if (nodeSt >= 1) perPowered[ai]++;
+          }
+        }
       }
       usleep(sliceUs);
     }
-    if (aneSvc != MACH_PORT_NULL) IOObjectRelease(aneSvc);
+    metrics.aneClusterCount = aneSvcCount;
+    for (int ci = 0; ci < MAX_ANE_SERVICES; ci++) {
+      metrics.aneClusterActive[ci] = -1.0;
+    }
+    for (int ci = 0; ci < aneSvcCount && ci < MAX_ANE_SERVICES; ci++) {
+      if (perSamples[ci] > 0) {
+        metrics.aneClusterActive[ci] =
+            (double)perPowered[ci] / (double)perSamples[ci] * 100.0;
+      }
+    }
+    for (int ai = 0; ai < aneSvcCount; ai++) {
+      if (aneSvcs[ai] != MACH_PORT_NULL) IOObjectRelease(aneSvcs[ai]);
+    }
     if (samples > 0)
       anePowerStatePct = (double)powered / (double)samples * 100.0;
   }
@@ -3179,8 +3265,8 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   // ANE utilization fallback (M5 Max / macOS 27): when no PMP ANE floor/util
   // channel was present at all, aneActive would be stuck at 0% even under
   // on-device inference. Substitute the H11ANE driver's IOPowerManagement
-  // power-state duty cycle sampled across the window (see copyAneService). Chips
-  // that do expose PMP keep their higher-resolution floor-residency signal.
+  // power-state duty cycle sampled across the window (see collectAneServices).
+  // Chips that do expose PMP keep their higher-resolution floor-residency signal.
   if (!sawAneUtilChannel && anePowerStatePct >= 0.0) {
     metrics.aneActive = anePowerStatePct;
     metrics.aneIsPowerState = 1; // signal the UI to label this "powered", not a %

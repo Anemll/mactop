@@ -62,6 +62,7 @@ var (
 	memBWWriteHistory                                                       = make([]float64, 100)
 	maxMemBWSeen                                                            float64
 	aneUsageHistory                                                         = make([]float64, 100)
+	aneCluster0History, aneCluster1History                                  []float64
 	dramReadHistory                                                         = make([]float64, 100)
 	dramWriteHistory                                                        = make([]float64, 100)
 	aneReadBwHistory                                                        = make([]float64, 100)

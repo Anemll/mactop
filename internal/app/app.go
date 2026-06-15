@@ -122,6 +122,8 @@ func setupUI() {
 	memBWReadHistory = make([]float64, numPoints)
 	memBWWriteHistory = make([]float64, numPoints)
 	aneUsageHistory = make([]float64, numPoints)
+	aneCluster0History = make([]float64, numPoints)
+	aneCluster1History = make([]float64, numPoints)
 	dramReadHistory = make([]float64, numPoints)
 	dramWriteHistory = make([]float64, numPoints)
 	aneReadBwHistory = make([]float64, numPoints)
@@ -976,7 +978,7 @@ func updateCPUUI(cpuMetrics CPUMetrics) {
 	updateMemoryHistory(memoryMetrics)
 
 	// New SoC history charts (for history_soc layout)
-	updateANEHistory(cpuMetrics.ANEW, cpuMetrics.ANEActive, cpuMetrics.ANEPowered)
+	updateANEHistory(cpuMetrics)
 	updateBandwidthHistory(cpuMetrics)
 	updateSoCPowerHistory(cpuMetrics)
 
@@ -1109,29 +1111,122 @@ func anePoweredLabel(dutyPct float64) string {
 	return "idle"
 }
 
-func updateANEHistory(aneWatts float64, aneActive float64, anePowered bool) {
+func aneClusterIsActive(pct float64) bool {
+	return pct > 0
+}
+
+func formatDualANEClusterStatus(c0, c1 float64, powered bool) string {
+	active0 := aneClusterIsActive(c0)
+	active1 := aneClusterIsActive(c1)
+	if powered {
+		switch {
+		case active0 && active1:
+			return "ANE0 & ANE1 powered"
+		case active0 && !active1:
+			return "ANE0 powered, ANE1 idle"
+		case !active0 && active1:
+			return "ANE0 idle, ANE1 powered"
+		default:
+			return "idle"
+		}
+	}
+	switch {
+	case active0 && active1:
+		return "ANE0 & ANE1 active"
+	case active0 && !active1:
+		return "ANE0 active, ANE1 idle"
+	case !active0 && active1:
+		return "ANE0 idle, ANE1 active"
+	default:
+		return "idle"
+	}
+}
+
+// formatDualANEClusterChartText builds a consistent title + per-line labels for
+// the history_soc dual-cluster ANE chart. Title summarizes the combined state;
+// line labels match each cluster's individual powered/idle (or %) reading.
+func formatDualANEClusterChartText(c0, c1 float64, powered bool, nClusters int) (title string, label0, label1 string) {
+	if powered {
+		label0 = fmt.Sprintf("ANE0 %s", anePoweredLabel(c0))
+		label1 = fmt.Sprintf("ANE1 %s", anePoweredLabel(c1))
+	} else {
+		label0 = fmt.Sprintf("ANE0 %.0f%%", c0)
+		label1 = fmt.Sprintf("ANE1 %.0f%%", c1)
+	}
+	title = fmt.Sprintf("ANE (%d clusters) · %s", nClusters, formatDualANEClusterStatus(c0, c1, powered))
+	return title, label0, label1
+}
+
+func clampANEPercent(pct float64) float64 {
+	if pct < 0 {
+		return 0
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+// staggerANEClusterChartSeries applies a small display-only vertical offset when
+// two ANE cluster traces are identical (common when both read "powered" at 100%).
+// Real metrics/titles are unchanged; only the StepChart draw positions shift.
+func staggerANEClusterChartSeries(c0, c1 []float64, scaleMax float64) (displayC0, displayC1 []float64) {
+	const eps = 1.0
+	const halfStagger = 4.0
+
+	displayC0 = make([]float64, len(c0))
+	displayC1 = make([]float64, len(c1))
+	for i := range c0 {
+		displayC0[i] = c0[i]
+		displayC1[i] = c1[i]
+		if math.Abs(c0[i]-c1[i]) >= eps {
+			continue
+		}
+		displayC0[i] = math.Max(0, c0[i]-halfStagger)
+		displayC1[i] = math.Min(scaleMax, c1[i]+halfStagger)
+	}
+	return displayC0, displayC1
+}
+
+func updateANEHistory(cpuMetrics CPUMetrics) {
+	aneWatts := cpuMetrics.ANEW
+	aneActive := cpuMetrics.ANEActive
+	anePowered := cpuMetrics.ANEPowered
+
 	// Prefer the direct ANE % parsed from PMP state residencies (macOS 27+ /
 	// M5). Fall back to the legacy power-derived estimate on older chips
 	// where those channels produce no data but Energy Model power works — but
 	// not when aneActive is the binary power-state signal (anePowered), whose 0
 	// already means idle.
-	anePct := aneActive
+	anePct := clampANEPercent(aneActive)
 	if anePct <= 0 && aneWatts > 0 && !anePowered {
-		anePct = aneWatts / 8.0 * 100
+		anePct = clampANEPercent(aneWatts / 8.0 * 100)
 	}
-	if anePct < 0 {
-		anePct = 0
+
+	clusterCount := len(cpuMetrics.ANEClusterActive)
+	cluster0 := 0.0
+	cluster1 := 0.0
+	if clusterCount > 0 {
+		cluster0 = clampANEPercent(cpuMetrics.ANEClusterActive[0])
 	}
-	if anePct > 100 {
-		anePct = 100
+	if clusterCount > 1 {
+		cluster1 = clampANEPercent(cpuMetrics.ANEClusterActive[1])
 	}
 
 	for i := 0; i < len(aneUsageHistory)-1; i++ {
 		aneUsageHistory[i] = aneUsageHistory[i+1]
 		aneAvgHistory[i] = aneAvgHistory[i+1]
 		anePeakHistory[i] = anePeakHistory[i+1]
+		if len(aneCluster0History) > 0 {
+			aneCluster0History[i] = aneCluster0History[i+1]
+			aneCluster1History[i] = aneCluster1History[i+1]
+		}
 	}
 	aneUsageHistory[len(aneUsageHistory)-1] = anePct
+	if len(aneCluster0History) > 0 {
+		aneCluster0History[len(aneCluster0History)-1] = cluster0
+		aneCluster1History[len(aneCluster1History)-1] = cluster1
+	}
 
 	// EMA + decaying Peak for ANE
 	alpha := 0.15
@@ -1170,7 +1265,37 @@ func updateANEHistory(aneWatts float64, aneActive float64, anePowered bool) {
 				scaleMax = 50.0
 			}
 
-			if currentConfig.DefaultLayout == LayoutHistorySoC {
+			if currentConfig.DefaultLayout == LayoutHistorySoC && clusterCount > 1 {
+				visibleC0 := aneCluster0History[len(aneCluster0History)-visibleWidth:]
+				visibleC1 := aneCluster1History[len(aneCluster1History)-visibleWidth:]
+				for _, series := range [][]float64{visibleC0, visibleC1} {
+					for _, v := range series {
+						if v > maxVal {
+							maxVal = v
+						}
+					}
+				}
+				if maxVal <= 25.0 {
+					scaleMax = 25.0
+				} else if maxVal <= 50.0 {
+					scaleMax = 50.0
+				} else {
+					scaleMax = 100.0
+				}
+
+				displayC0, displayC1 := staggerANEClusterChartSeries(visibleC0, visibleC1, scaleMax)
+				aneHistoryChart.Data = [][]float64{displayC0, displayC1}
+				// Both ANE clusters use red; ANE1 is drawn second (on top) with a
+				// display stagger when values match so both traces stay visible.
+				aneHistoryChart.LineColors = []ui.Color{ui.ColorRed, ui.ColorRed}
+				nClusters := cpuMetrics.ANEClusterCount
+				if nClusters < 2 {
+					nClusters = clusterCount
+				}
+				title, label0, label1 := formatDualANEClusterChartText(cluster0, cluster1, anePowered, nClusters)
+				aneHistoryChart.Title = title
+				aneHistoryChart.DataLabels = []string{label0, label1}
+			} else if currentConfig.DefaultLayout == LayoutHistorySoC {
 				currentPeak := 0.0
 				if len(visiblePeak) > 0 {
 					currentPeak = visiblePeak[len(visiblePeak)-1]
