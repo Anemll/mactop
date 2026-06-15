@@ -1,0 +1,15 @@
+=== ane_scan: IOReport ANE channel scan ===
+host: M5M.local   window: 1500 ms   euid: 501 (non-root)
+
+GROUP PMP                    : 0 channels (group present but EMPTY for this process — nothing to subscribe to)
+GROUP CLPC                   : 0 channels (group present but EMPTY for this process — nothing to subscribe to)
+GROUP ODS                    : 0 channels (group present but EMPTY for this process — nothing to subscribe to)
+GROUP Performance Statistics : 0 channels (group present but EMPTY for this process — nothing to subscribe to)
+GROUP Energy Model           : 364 channels, 1 ANE-named
+  CHANNEL subgroup=(none)         name=ANE0           unit=mJ    states=-1  [mactop: util=- engine=- bw=-]
+    (single-value channel, not multi-state)
+GROUP CPU Stats              : 130 channels, 0 ANE-named
+GROUP GPU Stats              : 140 channels, 0 ANE-named
+GROUP AMC Stats              : 223 channels declared, but standalone subscription FAILED (some groups only subscribe when merged with others)
+
+=== summary: 1 ANE-named channel(s) across all scanned groups ===

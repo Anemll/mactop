@@ -104,7 +104,10 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		CPUW:            m.CPUPower,
 		GPUW:            m.GPUPower,
 		ANEW:            m.ANEPower,
-		ANEActive:       m.ANEActive,
+		ANEActive:        m.ANEActive,
+		ANEPowered:       m.ANEPowered,
+		ANEClusterCount:  m.ANEClusterCount,
+		ANEClusterActive: m.ANEClusterActive,
 		ANEReadBW:       m.ANEReadBW,
 		ANEWriteBW:      m.ANEWriteBW,
 		DRAMW:           m.DRAMPower,
@@ -147,6 +150,21 @@ const aneBWRefFloorGBs = 4.0
 // "ANE RD/WR" byte counters show traffic, it falls back to a bandwidth-based
 // activity estimate so ANE usage doesn't silently read 0 on newer OSes.
 func aneUtilizationPercent(m CPUMetrics) float64 {
+	// 0. IORegistry power-domain duty cycle (M5 Max / Ultra on macOS 27 when
+	// PMP channels are empty for non-root): binary powered/idle per window.
+	if m.ANEPowered {
+		if m.ANEW <= 0 {
+			aneBWModeLatched.Store(true)
+		}
+		pct := m.ANEActive
+		if pct > 100 {
+			pct = 100
+		}
+		if pct < 0 {
+			pct = 0
+		}
+		return pct
+	}
 	// 1. PMP state-residency utilization (macOS 27+/M5): true time-above-
 	//    idle-floor measurement parsed from the ANE-AF-BW / ANE-DCS-BW
 	//    channels — the most accurate signal where it exists. Latch the
