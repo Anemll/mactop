@@ -1344,6 +1344,21 @@ func renderANEHistoryChart(cpuMetrics CPUMetrics, anePct, aneWatts, aneBW float6
 	}
 
 	aneHistoryChart.Data = [][]float64{visibleRaw}
+	if cpuMetrics.ANEExclave {
+		// Exclave ANE (M5 / M5 Max): binary powered/idle, never a %. The history
+		// trace is the 0/100 power-domain series; the title and data label carry
+		// ON/idle so layout 19 matches the gauge instead of showing "100.0%".
+		state := aneOnOffLabel(anePct)
+		aneColor := ui.ColorRed
+		if currentConfig.DefaultLayout != LayoutHistorySoC {
+			aneColor = ui.ColorMagenta
+		}
+		aneHistoryChart.LineColors = []ui.Color{historyLineColor(func(t *CustomThemeConfig) string { return t.ANE }, aneColor)}
+		aneHistoryChart.DataLabels = []string{state}
+		aneHistoryChart.Title = fmt.Sprintf("ANE: %s", state)
+		aneHistoryChart.MaxVal = scaleMax
+		return
+	}
 	aneHistoryChart.DataLabels = []string{fmt.Sprintf("%.1f%%", anePct)}
 	if currentConfig.DefaultLayout == LayoutHistorySoC {
 		// Peak: in bandwidth mode use the max of the visible window — ANE
