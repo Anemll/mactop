@@ -1,5 +1,0 @@
-# compiled scanner (platform-specific; rebuild with run_ane_diag.sh)
-ane_scan
-# generated capture output
-ane_diag_*.txt
-fm_*.txt
