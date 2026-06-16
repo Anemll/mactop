@@ -1098,6 +1098,16 @@ func anePoweredLabel(dutyPct float64) string {
 	return "idle"
 }
 
+// aneOnOffLabel renders the exclave ANE (M5 / M5 Max) power-domain state as a
+// terse ON/idle word for the main gauge, where CurrentPowerState is binary and a
+// percentage would be meaningless (pinned high by background macOS ML services).
+func aneOnOffLabel(dutyPct float64) string {
+	if dutyPct > 0 {
+		return "ON"
+	}
+	return "idle"
+}
+
 func aneClusterIsActive(pct float64) bool {
 	return pct > 0
 }
@@ -1695,7 +1705,16 @@ func updateCPUGaugeTitles(totalUsage float64, cpuMetrics CPUMetrics) {
 	// session-latched (see aneBWLabelMode) so the label doesn't flip back to
 	// "@ 0.00 W" when the ANE goes idle on an OS whose watts are never nonzero.
 	bwMode := aneBWLabelMode(cpuMetrics)
-	if isCompactLayout() {
+	// The Gauge prints its inner bar label as "NN%" unless Label is set; default
+	// back to that for the %-form layouts, override it for the binary exclave case.
+	aneGauge.Label = ""
+	if cpuMetrics.ANEExclave {
+		// Exclave ANE (M5 / M5 Max): binary ON/idle only. aneUtil is 0 or 100, so
+		// the gauge bar reads empty/full and neither the title nor the bar label
+		// shows a percentage.
+		aneGauge.Title = fmt.Sprintf("ANE: %s", aneOnOffLabel(aneUtil))
+		aneGauge.Label = aneOnOffLabel(aneUtil)
+	} else if isCompactLayout() {
 		if bwMode {
 			aneGauge.Title = fmt.Sprintf(i18n.T("Metrics_ANEGaugeBWCompact"), cpuMetrics.ANEBW)
 		} else {

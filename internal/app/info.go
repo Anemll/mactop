@@ -92,6 +92,9 @@ func buildInfoLines(themeColor string) []string {
 		formatLine(i18n.T("Info_GPUUsage"), fmt.Sprintf("%d%%", int(lastGPUMetrics.ActivePercent))),
 		formatLine(i18n.T("Info_ANEUsage"), func() string {
 			anePct := aneUtilizationPercent(lastCPUMetrics)
+			if lastCPUMetrics.ANEExclave {
+				return aneOnOffLabel(anePct)
+			}
 			if lastCPUMetrics.ANEPowered {
 				return anePoweredLabel(anePct)
 			}

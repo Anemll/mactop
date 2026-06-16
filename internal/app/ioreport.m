@@ -1481,6 +1481,12 @@ typedef struct {
   // 1 => aneActive is the binary ANE power-domain duty cycle (M5 Max / macOS 27
   // non-root fallback: ANE powered vs idle), NOT a true utilization %.
   int aneIsPowerState;
+  // 1 => the ANE is an exclave-based driver (Apple H16+, e.g. M5 / M5 Max).
+  // On these parts IOPowerManagement.CurrentPowerState stays pinned high while
+  // ANY background ML service (mediaanalysisd, photoanalysisd, …) uses the ANE,
+  // so the power-state signal is only meaningful as a binary powered/idle
+  // indicator — never a utilization %. The UI gates on this per chip family.
+  int aneIsExclave;
   // Fan data
   int fanCount;
   fan_info_t fans[8];
@@ -2634,6 +2640,37 @@ static int readAnePowerState(io_service_t svc) {
   return state;
 }
 
+// Detect an exclave-based ANE driver (Apple H16+, e.g. M5 / M5 Max). These
+// publish IOExclaveProxy=Yes and IONameMatched "ane,*exclave". On exclave ANE
+// the IOPowerManagement.CurrentPowerState duty cycle is pinned high by
+// background macOS ML services, so it must be presented as a binary powered/idle
+// state rather than a percentage. Older non-exclave parts (M1..M4, Ultra dies)
+// return 0 here and keep their per-die duty-cycle %.
+static int aneServiceIsExclave(io_service_t svc) {
+  if (svc == MACH_PORT_NULL) return 0;
+  int isExclave = 0;
+  CFTypeRef proxy = IORegistryEntryCreateCFProperty(
+      svc, CFSTR("IOExclaveProxy"), kCFAllocatorDefault, 0);
+  if (proxy != NULL) {
+    if (CFGetTypeID(proxy) == CFBooleanGetTypeID())
+      isExclave = CFBooleanGetValue((CFBooleanRef)proxy) ? 1 : 0;
+    CFRelease(proxy);
+  }
+  if (!isExclave) {
+    CFTypeRef nm = IORegistryEntryCreateCFProperty(
+        svc, CFSTR("IONameMatched"), kCFAllocatorDefault, 0);
+    if (nm != NULL) {
+      if (CFGetTypeID(nm) == CFStringGetTypeID() &&
+          CFStringFind((CFStringRef)nm, CFSTR("exclave"),
+                       kCFCompareCaseInsensitive)
+                  .location != kCFNotFound)
+        isExclave = 1;
+      CFRelease(nm);
+    }
+  }
+  return isExclave;
+}
+
 // Sort key so H11ANE (die 0) precedes H11ANE1 (die 1) in per-cluster arrays.
 static int aneServiceSortKey(io_service_t svc) {
   io_name_t name;
@@ -2715,6 +2752,14 @@ PowerMetrics samplePowerMetrics(int durationMs) {
     io_service_t aneSvcs[MAX_ANE_SERVICES];
     int aneSvcCount = collectAneServices(aneSvcs, MAX_ANE_SERVICES);
     sortAneServicesByDie(aneSvcs, aneSvcCount);
+    // Exclave ANE (M5 / M5 Max): power-state signal is binary-only. Any exclave
+    // node marks the whole sample so the UI shows powered/idle, not a %.
+    for (int ai = 0; ai < aneSvcCount; ai++) {
+      if (aneServiceIsExclave(aneSvcs[ai])) {
+        metrics.aneIsExclave = 1;
+        break;
+      }
+    }
     int slices = durationMs / 50; // ~50ms cadence (20 samples over a 1s window)
     if (slices < 1) slices = 1;
     useconds_t sliceUs = (useconds_t)((long)durationMs * 1000 / slices);

@@ -106,6 +106,7 @@ func cpuMetricsFromSoc(m SocMetrics, coreUsages []float64, avgUsage float64, thr
 		ANEW:            m.ANEPower,
 		ANEActive:        m.ANEActive,
 		ANEPowered:       m.ANEPowered,
+		ANEExclave:       m.ANEExclave,
 		ANEClusterCount:  m.ANEClusterCount,
 		ANEClusterActive: m.ANEClusterActive,
 		ANEReadBW:       m.ANEReadBW,
@@ -150,8 +151,19 @@ const aneBWRefFloorGBs = 4.0
 // "ANE RD/WR" byte counters show traffic, it falls back to a bandwidth-based
 // activity estimate so ANE usage doesn't silently read 0 on newer OSes.
 func aneUtilizationPercent(m CPUMetrics) float64 {
-	// 0. IORegistry power-domain duty cycle (M5 Max / Ultra on macOS 27 when
-	// PMP channels are empty for non-root): binary powered/idle per window.
+	// 0a. Exclave ANE (M5 / M5 Max): CurrentPowerState is pinned high by
+	// background macOS ML services, so the duty cycle is only meaningful as a
+	// binary powered/idle state. Collapse to 0/100 and — crucially — do NOT
+	// latch bandwidth/residency modes here: those make the gauge fall through to
+	// a %-form label and render this binary value as a misleading percentage.
+	if m.ANEExclave {
+		if m.ANEActive > 0 {
+			return 100
+		}
+		return 0
+	}
+	// 0b. IORegistry power-domain duty cycle (non-exclave Ultra dies on macOS 27
+	// when PMP channels are empty for non-root): binary powered/idle per window.
 	if m.ANEPowered {
 		if m.ANEW <= 0 {
 			aneBWModeLatched.Store(true)
@@ -232,6 +244,11 @@ func aneUtilizationPercent(m CPUMetrics) float64 {
 // earlier this session. On OSes with a working energy counter (macOS 26) the
 // latch never trips, so labels behave exactly as before.
 func aneBWLabelMode(m CPUMetrics) bool {
+	// Exclave ANE (M5 / M5 Max) has no non-root bandwidth signal and is rendered
+	// as a binary ON/idle state, so it never uses the bandwidth-form label.
+	if m.ANEExclave {
+		return false
+	}
 	return m.ANEW <= 0 && (m.ANEActive > 0 || m.ANEBW > 0 || aneBWModeLatched.Load())
 }
 

@@ -25,6 +25,7 @@ type CPUMetrics struct {
 	ANEW, CPUW, GPUW, DRAMW, GPUSRAMW, PackageW, SystemW             float64
 	ANEActive                                                        float64
 	ANEPowered                                                       bool // ANEActive is binary power-domain state (M5 Max non-root), not a true %
+	ANEExclave                                                       bool // exclave ANE (M5/M5 Max): show binary ON/idle, never a %
 	ANEClusterCount                                                  int
 	ANEClusterActive                                                 []float64
 	ANEReadBW                                                        float64
