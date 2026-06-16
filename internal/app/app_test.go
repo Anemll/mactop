@@ -376,6 +376,31 @@ func TestHistoryLineColor(t *testing.T) {
 	}
 }
 
+// TestActivityMonitorMemoryUsed covers the macOS memory-used formula: anonymous
+// app memory + wired + compressed, with underflow guards. The headline case is
+// large anonymous memory (MLX weights) that macOS has aged into the inactive
+// queue — the old free+inactive formula collapsed toward 0 there.
+func TestActivityMonitorMemoryUsed(t *testing.T) {
+	const gb = 1 << 30
+	cases := []struct {
+		name                                           string
+		anonymous, purgeable, wired, compressed, total uint64
+		want                                           uint64
+	}{
+		{"typical", 40 * gb, 1 * gb, 8 * gb, 2 * gb, 64 * gb, 49 * gb},
+		// 60GB anonymous (model weights) even if macOS queues it as inactive:
+		// must count as used, not vanish.
+		{"mlx-heavy", 60 * gb, 0, 6 * gb, 4 * gb, 96 * gb, 70 * gb},
+		{"purgeable-exceeds-anon", 1 * gb, 3 * gb, 2 * gb, 0, 16 * gb, 2 * gb},
+		{"clamp-to-total", 200 * gb, 0, 100 * gb, 50 * gb, 128 * gb, 128 * gb},
+	}
+	for _, c := range cases {
+		if got := activityMonitorMemoryUsed(c.anonymous, c.purgeable, c.wired, c.compressed, c.total); got != c.want {
+			t.Errorf("%s: got %d GB, want %d GB", c.name, got/gb, c.want/gb)
+		}
+	}
+}
+
 func TestANERefHysteresis(t *testing.T) {
 	resetANETestState(t)
 

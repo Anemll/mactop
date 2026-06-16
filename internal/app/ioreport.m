@@ -2881,6 +2881,7 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   double dramNamedEnergyW = 0; // "DRAM Energy"-style aggregates
   int64_t pmpAneReadBytes = 0;
   int64_t pmpAneWriteBytes = 0;
+  int64_t pmpAneCombinedBytes = 0; // combined "ANE RD+WR" (chips without split RD/WR)
   bool sawAnePmpActivity = false;  // any positive residency on ANE* PMP channels (macOS 27+)
   bool sawAneUtilChannel = false;  // a usable PMP ANE floor/util channel was present at all
 
@@ -3271,11 +3272,17 @@ PowerMetrics samplePowerMetrics(int durationMs) {
         // ANE bandwidth: residency-weighted average of the "AF BW" rate
         // histogram buckets (bucket names parse as "<N>GB/s"), converted to
         // bytes over this window. Only "AF BW" is used ("DCS BW" mirrors it
-        // and would double count); "RD+WR" is skipped (sum of RD and WR).
-        // The histogram only ticks while the ANE is powered, so this is the
-        // average rate while powered — at idle the total is 0 and we report 0.
+        // and would double count).
+        //
+        // Channel layout varies by chip: some expose separate "ANE0 RD" /
+        // "ANE0 WR" histograms, others expose ONLY the combined "ANE0 RD+WR".
+        // M1/M2/M3/M4 read exact bytes from AMC so this PMP path is unused on
+        // them, but on chips where AMC ANE counters are kernel-blocked (M5+,
+        // and M-series Ultra/Max variants on macOS 27) this is the sole ANE
+        // bandwidth source. Previously the combined "RD+WR" channel was
+        // skipped entirely, so those chips reported 0 GB/s (and 0% ANE) even
+        // under full Foundation Models load — handle it as the combined total.
         if (stateCount > 1 && strcmp(sub, "AF BW") == 0 &&
-            strstr(chn, "RD+WR") == NULL &&
             (strstr(chn, "RD") != NULL || strstr(chn, "WR") != NULL)) {
           int64_t tot = 0;
           double weighted = 0;
@@ -3300,10 +3307,12 @@ PowerMetrics samplePowerMetrics(int durationMs) {
                                    ? (double)metrics.actualDurationNs / 1e9
                                    : (double)durationMs / 1000.0;
             int64_t bytes = (int64_t)(avgGBs * 1e9 * sampleSec);
-            // max, not +=: there is exactly one RD and one WR channel in
-            // "AF BW", but the channel may appear more than once in a merged
-            // subscription — summing would double count.
-            if (strstr(chn, "RD") != NULL) {
+            // max, not +=: a channel may appear more than once in a merged
+            // subscription — summing would double count. "RD+WR" is the
+            // combined total (kept apart so it isn't mistaken for read-only).
+            if (strstr(chn, "RD+WR") != NULL || strstr(chn, "RW") != NULL) {
+              if (bytes > pmpAneCombinedBytes) pmpAneCombinedBytes = bytes;
+            } else if (strstr(chn, "RD") != NULL) {
               if (bytes > pmpAneReadBytes) pmpAneReadBytes = bytes;
             } else {
               if (bytes > pmpAneWriteBytes) pmpAneWriteBytes = bytes;
@@ -3448,9 +3457,18 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   if (amcAneReadBytes + amcAneWriteBytes > 0) {
     metrics.aneReadBytes = amcAneReadBytes;
     metrics.aneWriteBytes = amcAneWriteBytes;
-  } else {
+  } else if (pmpAneReadBytes + pmpAneWriteBytes > 0) {
+    // PMP exposes a separate RD and WR histogram (preserves the split).
     metrics.aneReadBytes = pmpAneReadBytes;
     metrics.aneWriteBytes = pmpAneWriteBytes;
+  } else {
+    // PMP exposes only the combined "ANE RD+WR" histogram (M5+/Ultra/Max on
+    // macOS 27, where AMC ANE byte counters are kernel-blocked). Report it as
+    // the read figure with no split — the combined total drives the gauge and
+    // utilization correctly, which is what matters; a fabricated 50/50 split
+    // would be misleading.
+    metrics.aneReadBytes = pmpAneCombinedBytes;
+    metrics.aneWriteBytes = 0;
   }
 
   // ANE utilization fallback (M5 Max / macOS 27): when no PMP ANE floor/util

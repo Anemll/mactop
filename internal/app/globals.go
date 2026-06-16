@@ -26,7 +26,7 @@ func init() {
 }
 
 var (
-	version                                                     = "v2.1.5"
+	version                                                     = "v2.1.6"
 	cpuGauge, gpuGauge, memoryGauge, aneGauge                   *w.Gauge
 	mainBlock                                                   *ui.Block
 	modelText, PowerChart, NetworkInfo, helpText, infoParagraph *w.Paragraph
