@@ -2748,15 +2748,19 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   // fallback ANE-activity signal when the PMP performance-floor channels are
   // absent (M5 Max / macOS 27, non-root). anePowerStatePct < 0 => unavailable.
   double anePowerStatePct = -1.0;
+  // Exclave ANE (M5 / M5 Max): power-state signal is binary-only. Recorded here
+  // but only surfaced (metrics.aneIsExclave) if the binary power-state fallback
+  // is actually used — i.e. no util-floor channel AND no bandwidth signal exist.
+  // That way a working ANE channel (e.g. metaspartan's combined RD+WR PMP path)
+  // keeps its real %/GB/s display instead of being overridden by ON/idle.
+  int aneExclaveDetected = 0;
   {
     io_service_t aneSvcs[MAX_ANE_SERVICES];
     int aneSvcCount = collectAneServices(aneSvcs, MAX_ANE_SERVICES);
     sortAneServicesByDie(aneSvcs, aneSvcCount);
-    // Exclave ANE (M5 / M5 Max): power-state signal is binary-only. Any exclave
-    // node marks the whole sample so the UI shows powered/idle, not a %.
     for (int ai = 0; ai < aneSvcCount; ai++) {
       if (aneServiceIsExclave(aneSvcs[ai])) {
-        metrics.aneIsExclave = 1;
+        aneExclaveDetected = 1;
         break;
       }
     }
@@ -3472,13 +3476,18 @@ PowerMetrics samplePowerMetrics(int durationMs) {
   }
 
   // ANE utilization fallback (M5 Max / macOS 27): when no PMP ANE floor/util
-  // channel was present at all, aneActive would be stuck at 0% even under
-  // on-device inference. Substitute the H11ANE driver's IOPowerManagement
-  // power-state duty cycle sampled across the window (see collectAneServices).
-  // Chips that do expose PMP keep their higher-resolution floor-residency signal.
-  if (!sawAneUtilChannel && anePowerStatePct >= 0.0) {
+  // channel was present AND no ANE bandwidth (AMC or PMP RD/WR/RD+WR) is
+  // available, aneActive would be stuck at 0% even under on-device inference.
+  // Substitute the H11ANE driver's IOPowerManagement power-state duty cycle
+  // sampled across the window (see collectAneServices). Any working channel —
+  // including the combined RD+WR PMP bandwidth path — takes precedence so its
+  // real %/GB-s display is kept (maintainer preference for layout 19), and the
+  // exclave binary ON/idle treatment only applies in this last-resort case.
+  bool haveAneBandwidth = (metrics.aneReadBytes + metrics.aneWriteBytes) > 0;
+  if (!sawAneUtilChannel && !haveAneBandwidth && anePowerStatePct >= 0.0) {
     metrics.aneActive = anePowerStatePct;
     metrics.aneIsPowerState = 1; // signal the UI to label this "powered", not a %
+    metrics.aneIsExclave = aneExclaveDetected; // binary ON/idle only here
   }
 
   // Fallback: estimate DRAM BW from DRAM power after local calibration.
